@@ -1,0 +1,23 @@
+{
+  "name": "com.vanhaodev.savemanager",
+  "version": "1.0.0",
+  "displayName": "Save Manager",
+  "description": "",
+  "unity": "6000.0",
+  "author": {
+    "name": "vanhaodev"
+  },
+  "documentationUrl": "https://github.com/vanhaodev/unity-save-manager/blob/main/Docs/Guide.md",
+  "keywords": [
+    "vanhaodev",
+    "save",
+    "storage"
+  ],
+  "samples": [
+    {
+      "displayName": "?",
+      "description": "?",
+      "path": "Samples~/?"
+    }
+  ]
+}
