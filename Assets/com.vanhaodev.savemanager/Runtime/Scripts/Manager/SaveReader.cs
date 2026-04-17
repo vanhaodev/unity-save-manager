@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Text;
 
 namespace vanhaodev.savemanager
@@ -44,6 +45,25 @@ namespace vanhaodev.savemanager
 		public bool ReadBool()
 		{
 			return _data[_offset++] == 1;
+		}
+
+		public List<T> ReadList<T>() where T : ISaveReadWrite, new()
+		{
+			int count = ReadInt();
+
+			if (count == -1)
+				return null;
+
+			var list = new List<T>(count);
+
+			for (int i = 0; i < count; i++)
+			{
+				var item = new T();
+				item.Read(this);
+				list.Add(item);
+			}
+
+			return list;
 		}
 
 		public string ReadString()

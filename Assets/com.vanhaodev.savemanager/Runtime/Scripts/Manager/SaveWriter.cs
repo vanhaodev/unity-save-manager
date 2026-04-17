@@ -45,6 +45,22 @@ namespace vanhaodev.savemanager
 			AddInt(bytes.Length);
 			_buffer.AddRange(bytes);
 		}
+		
+		public void WriteList<T>(List<T> list) where T : ISaveReadWrite
+		{
+			if (list == null)
+			{
+				AddInt(-1);
+				return;
+			}
+
+			AddInt(list.Count);
+
+			for (int i = 0; i < list.Count; i++)
+			{
+				list[i].Write(this);
+			}
+		}
 
 		public byte[] ToArray()
 		{
