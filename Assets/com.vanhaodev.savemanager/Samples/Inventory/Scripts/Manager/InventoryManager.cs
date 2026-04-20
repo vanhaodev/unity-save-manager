@@ -5,7 +5,7 @@ namespace vanhaodev.savemanager.Samples.Inventory
 {
 	public class InventoryManager : MonoBehaviour
 	{
-		private const string SaveKey = "inventory";
+		private const string InvFileName = "inventory";
 
 		private static readonly string[] Prefixes =
 		{
@@ -29,7 +29,7 @@ namespace vanhaodev.savemanager.Samples.Inventory
 
 		public void Load()
 		{
-			Data = Save.Get<InventoryModel>(SaveKey);
+			Data = Save.Get<InventoryModel>(InvFileName);
 
 			if (Data == null)
 			{
@@ -50,7 +50,7 @@ namespace vanhaodev.savemanager.Samples.Inventory
 				};
 			}
 
-			Save.Set(SaveKey, Data);
+			Save.Set(InvFileName, Data);
 		}
 
 		public ItemModel GenerateItem()

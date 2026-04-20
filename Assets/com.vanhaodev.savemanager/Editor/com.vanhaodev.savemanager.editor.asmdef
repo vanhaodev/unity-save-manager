@@ -1,0 +1,18 @@
+{
+    "name": "com.vanhaodev.savemanager.editor",
+    "rootNamespace": "vanhaodev.savemanager.Editor",
+    "references": [
+        "GUID:dc4e06e5cab42a64d86450eed460bc2a"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

@@ -28,13 +28,14 @@ namespace vanhaodev.savemanager
     /// </summary>
     public static class Save
     {
-        /// <summary>
-        /// Get full file path from key.
-        /// File is saved in persistentDataPath.
-        /// </summary>
+        private static readonly string SaveFolder = Path.Combine(Application.persistentDataPath, "SaveData");
+
         private static string GetPath(string key)
         {
-            return Path.Combine(Application.persistentDataPath, key + ".dat");
+            if (!Directory.Exists(SaveFolder))
+                Directory.CreateDirectory(SaveFolder);
+
+            return Path.Combine(SaveFolder, key + ".dat");
         }
 
         /// <summary>
@@ -42,18 +43,25 @@ namespace vanhaodev.savemanager
         /// This will write file right away.
         /// Safe but may block a little.
         /// </summary>
-        public static void Set(string key, ISaveable data)
+        public static void Set(string key, ISaveable data, EncryptionType encryption = EncryptionType.None)
         {
             var path = GetPath(key);
 
-            var writer = new SaveWriter();
+            // Header (not encrypted)
+            var headerWriter = new SaveWriter();
+            SaveHeader.Write(headerWriter, encryption);
 
-            SaveHeader.Write(writer);
-            data.WriteSave(writer);
+            // Data (encrypted)
+            var dataWriter = new SaveWriter();
+            data.WriteSave(dataWriter);
+            var dataBytes = SaveEncryption.Encrypt(dataWriter.ToArray(), encryption);
 
-            var bytes = writer.ToArray();
+            // Combine header + encrypted data
+            var finalWriter = new SaveWriter();
+            finalWriter.AddBytes(headerWriter.ToArray());
+            finalWriter.AddBytes(dataBytes);
 
-            WriteAtomic(path, bytes);
+            WriteAtomic(path, finalWriter.ToArray());
         }
 
         /// <summary>
@@ -65,16 +73,25 @@ namespace vanhaodev.savemanager
         /// forceSync = true:
         ///     Save immediately like Set(), safe for exit game.
         /// </summary>
-        public static void SetAsync(string key, ISaveable data, bool forceSync = false)
+        public static void SetAsync(string key, ISaveable data, EncryptionType encryption = EncryptionType.None, bool forceSync = false)
         {
             var path = GetPath(key);
 
-            var writer = new SaveWriter();
+            // Header (not encrypted)
+            var headerWriter = new SaveWriter();
+            SaveHeader.Write(headerWriter, encryption);
 
-            SaveHeader.Write(writer);
-            data.WriteSave(writer);
+            // Data (encrypted)
+            var dataWriter = new SaveWriter();
+            data.WriteSave(dataWriter);
+            var dataBytes = SaveEncryption.Encrypt(dataWriter.ToArray(), encryption);
 
-            var bytes = writer.ToArray();
+            // Combine header + encrypted data
+            var finalWriter = new SaveWriter();
+            finalWriter.AddBytes(headerWriter.ToArray());
+            finalWriter.AddBytes(dataBytes);
+
+            var bytes = finalWriter.ToArray();
 
             if (forceSync)
             {
@@ -124,12 +141,20 @@ namespace vanhaodev.savemanager
                 return default;
 
             var bytes = File.ReadAllBytes(path);
-            var reader = new SaveReader(bytes);
 
-            SaveHeader.Read(reader);
+            // Read header first (not encrypted)
+            var headerReader = new SaveReader(bytes);
+            var encryption = SaveHeader.Read(headerReader);
 
+            // Decrypt data part (after header)
+            var dataBytes = new byte[bytes.Length - SaveHeader.HEADER_SIZE];
+            System.Array.Copy(bytes, SaveHeader.HEADER_SIZE, dataBytes, 0, dataBytes.Length);
+            dataBytes = SaveEncryption.Decrypt(dataBytes, encryption);
+
+            // Read data
+            var dataReader = new SaveReader(dataBytes);
             var data = new T();
-            data.ReadSave(reader);
+            data.ReadSave(dataReader);
 
             return data;
         }

@@ -1,3 +1,4 @@
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 #if UNITY_EDITOR
@@ -13,7 +14,7 @@ namespace vanhaodev.savemanager.Samples.Inventory
 		[SerializeField] private Button _generateButton;
 		[SerializeField] private Transform _container;
 		[SerializeField] private ItemUI _itemPrefab;
-
+		
 		private InventoryManager _manager;
 
 #if !UNITY_EDITOR && (UNITY_STANDALONE_WIN || UNITY_STANDALONE_OSX || UNITY_STANDALONE_LINUX)
