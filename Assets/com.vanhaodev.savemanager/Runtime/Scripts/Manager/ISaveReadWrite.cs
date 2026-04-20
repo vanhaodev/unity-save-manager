@@ -1,8 +1,8 @@
 ﻿namespace vanhaodev.savemanager
 {
-	public interface ISaveReadWrite
+	public interface ISaveable
 	{
-		void Write(SaveWriter w);
-		void Read(SaveReader r);
+		void WriteSave(SaveWriter w);
+		void ReadSave(SaveReader r);
 	}
 }

@@ -23,6 +23,11 @@ namespace vanhaodev.savemanager
 			_buffer.AddRange(BitConverter.GetBytes(value));
 		}
 
+		public void AddLong(long value)
+		{
+			_buffer.AddRange(BitConverter.GetBytes(value));
+		}
+
 		public void AddFloat(float value)
 		{
 			_buffer.AddRange(BitConverter.GetBytes(value));
@@ -46,7 +51,7 @@ namespace vanhaodev.savemanager
 			_buffer.AddRange(bytes);
 		}
 		
-		public void WriteList<T>(List<T> list) where T : ISaveReadWrite
+		public void WriteList<T>(List<T> list) where T : ISaveable
 		{
 			if (list == null)
 			{
@@ -58,7 +63,7 @@ namespace vanhaodev.savemanager
 
 			for (int i = 0; i < list.Count; i++)
 			{
-				list[i].Write(this);
+				list[i].WriteSave(this);
 			}
 		}
 

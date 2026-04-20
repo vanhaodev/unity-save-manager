@@ -35,6 +35,13 @@ namespace vanhaodev.savemanager
 			return value;
 		}
 
+		public long ReadLong()
+		{
+			long value = BitConverter.ToInt64(_data, _offset);
+			_offset += 8;
+			return value;
+		}
+
 		public float ReadFloat()
 		{
 			float value = BitConverter.ToSingle(_data, _offset);
@@ -47,7 +54,7 @@ namespace vanhaodev.savemanager
 			return _data[_offset++] == 1;
 		}
 
-		public List<T> ReadList<T>() where T : ISaveReadWrite, new()
+		public List<T> ReadList<T>() where T : ISaveable, new()
 		{
 			int count = ReadInt();
 
@@ -59,7 +66,7 @@ namespace vanhaodev.savemanager
 			for (int i = 0; i < count; i++)
 			{
 				var item = new T();
-				item.Read(this);
+				item.ReadSave(this);
 				list.Add(item);
 			}
 

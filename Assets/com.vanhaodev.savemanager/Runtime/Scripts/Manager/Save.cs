@@ -42,14 +42,14 @@ namespace vanhaodev.savemanager
         /// This will write file right away.
         /// Safe but may block a little.
         /// </summary>
-        public static void Set(string key, ISaveReadWrite data)
+        public static void Set(string key, ISaveable data)
         {
             var path = GetPath(key);
 
             var writer = new SaveWriter();
 
             SaveHeader.Write(writer);
-            data.Write(writer);
+            data.WriteSave(writer);
 
             var bytes = writer.ToArray();
 
@@ -65,14 +65,14 @@ namespace vanhaodev.savemanager
         /// forceSync = true:
         ///     Save immediately like Set(), safe for exit game.
         /// </summary>
-        public static void SetAsync(string key, ISaveReadWrite data, bool forceSync = false)
+        public static void SetAsync(string key, ISaveable data, bool forceSync = false)
         {
             var path = GetPath(key);
 
             var writer = new SaveWriter();
 
             SaveHeader.Write(writer);
-            data.Write(writer);
+            data.WriteSave(writer);
 
             var bytes = writer.ToArray();
 
@@ -109,7 +109,7 @@ namespace vanhaodev.savemanager
         /// Load data from file.
         /// Return default if file not exists.
         /// </summary>
-        public static T Get<T>(string key) where T : ISaveReadWrite, new()
+        public static T Get<T>(string key) where T : ISaveable, new()
         {
             var path = GetPath(key);
             var tempPath = path + ".tmp";
@@ -129,7 +129,7 @@ namespace vanhaodev.savemanager
             SaveHeader.Read(reader);
 
             var data = new T();
-            data.Read(reader);
+            data.ReadSave(reader);
 
             return data;
         }
