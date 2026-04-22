@@ -1,0 +1,180 @@
+﻿using System.IO;
+using UnityEngine;
+
+namespace vanhaodev.savemanager
+{
+    /// <summary>
+    /// Save system overview:<br/>
+    /// <br/>
+    /// There are 2 ways to save:<br/>
+    /// <br/>
+    /// 1. SetAsync (recommended):<br/>
+    /// - Save in background (no lag)<br/>
+    /// - Game continues normally<br/>
+    /// - Save may finish later<br/>
+    /// - Use for normal gameplay<br/>
+    ///   (inventory, settings, etc)<br/>
+    /// <br/>
+    /// 2. Set (or SetAsync forceSync):<br/>
+    /// - Save immediately (sync)<br/>
+    /// - May freeze for short time<br/>
+    /// - Data is safe on disk<br/>
+    /// - Use for important moments<br/>
+    ///   (exit game, checkpoint)<br/>
+    /// <br/>
+    /// Simple rule:<br/>
+    /// - Normal save → SetAsync<br/>
+    /// - Important save → Set
+    /// </summary>
+    public static class Save
+    {
+        private static readonly string SaveFolder = Path.Combine(Application.persistentDataPath, "SaveData");
+
+        private static string GetPath(string key)
+        {
+            if (!Directory.Exists(SaveFolder))
+                Directory.CreateDirectory(SaveFolder);
+
+            return Path.Combine(SaveFolder, key + ".dat");
+        }
+
+        /// <summary>
+        /// Save data immediately (sync).
+        /// This will write file right away.
+        /// Safe but may block a little.
+        /// </summary>
+        public static void Set(string key, ISaveable data, EncryptionType encryption = EncryptionType.None)
+        {
+            var path = GetPath(key);
+
+            // Header (not encrypted)
+            var headerWriter = new SaveWriter();
+            SaveHeader.Write(headerWriter, encryption);
+
+            // Data (encrypted)
+            var dataWriter = new SaveWriter();
+            data.WriteSave(dataWriter);
+            var dataBytes = SaveEncryption.Encrypt(dataWriter.ToArray(), encryption);
+
+            // Combine header + encrypted data
+            var finalWriter = new SaveWriter();
+            finalWriter.AddBytes(headerWriter.ToArray());
+            finalWriter.AddBytes(dataBytes);
+
+            WriteAtomic(path, finalWriter.ToArray());
+        }
+
+        /// <summary>
+        /// Save data in background (async).
+        /// 
+        /// forceSync = false:
+        ///     Save in background, no lag, but may delay.
+        /// 
+        /// forceSync = true:
+        ///     Save immediately like Set(), safe for exit game.
+        /// </summary>
+        public static void SetAsync(string key, ISaveable data, EncryptionType encryption = EncryptionType.None, bool forceSync = false)
+        {
+            var path = GetPath(key);
+
+            // Header (not encrypted)
+            var headerWriter = new SaveWriter();
+            SaveHeader.Write(headerWriter, encryption);
+
+            // Data (encrypted)
+            var dataWriter = new SaveWriter();
+            data.WriteSave(dataWriter);
+            var dataBytes = SaveEncryption.Encrypt(dataWriter.ToArray(), encryption);
+
+            // Combine header + encrypted data
+            var finalWriter = new SaveWriter();
+            finalWriter.AddBytes(headerWriter.ToArray());
+            finalWriter.AddBytes(dataBytes);
+
+            var bytes = finalWriter.ToArray();
+
+            if (forceSync)
+            {
+                // Save now (safe)
+                WriteAtomic(path, bytes);
+            }
+            else
+            {
+                // Save later (background)
+                SaveQueue.Enqueue(path, bytes);
+            }
+        }
+
+        /// <summary>
+        /// Write file using atomic method.
+        /// Write to temp file first, then replace main file.
+        /// This prevents file corruption if crash happens.
+        /// </summary>
+        private static void WriteAtomic(string path, byte[] bytes)
+        {
+            var tempPath = path + ".tmp";
+
+            File.WriteAllBytes(tempPath, bytes);
+
+            if (File.Exists(path))
+                File.Delete(path);
+
+            File.Move(tempPath, path);
+        }
+
+        /// <summary>
+        /// Load data from file.
+        /// Return default if file not exists.
+        /// </summary>
+        public static T Get<T>(string key) where T : ISaveable, new()
+        {
+            var path = GetPath(key);
+            var tempPath = path + ".tmp";
+
+            // If temp file exists (crash before), remove it
+            if (File.Exists(tempPath))
+            {
+                File.Delete(tempPath);
+            }
+
+            if (!File.Exists(path))
+                return default;
+
+            var bytes = File.ReadAllBytes(path);
+
+            // Read header first (not encrypted)
+            var headerReader = new SaveReader(bytes);
+            var encryption = SaveHeader.Read(headerReader);
+
+            // Decrypt data part (after header)
+            var dataBytes = new byte[bytes.Length - SaveHeader.HEADER_SIZE];
+            System.Array.Copy(bytes, SaveHeader.HEADER_SIZE, dataBytes, 0, dataBytes.Length);
+            dataBytes = SaveEncryption.Decrypt(dataBytes, encryption);
+
+            // Read data
+            var dataReader = new SaveReader(dataBytes);
+            var data = new T();
+            data.ReadSave(dataReader);
+
+            return data;
+        }
+
+        /// <summary>
+        /// Check if save file exists.
+        /// </summary>
+        public static bool Exists(string key)
+        {
+            return File.Exists(GetPath(key));
+        }
+
+        /// <summary>
+        /// Delete save file by key.
+        /// </summary>
+        public static void Delete(string key)
+        {
+            var path = GetPath(key);
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+    }
+}
