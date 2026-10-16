@@ -26,7 +26,7 @@ namespace vanhaodev.savemanager
 	{
 		// Per-thread state of the outermost open transaction.
 		[ThreadStatic] private static int _depth;
-		[ThreadStatic] private static Dictionary<string, byte[]> _items;
+		[ThreadStatic] private static Dictionary<string, PendingWrite> _items;
 		[ThreadStatic] private static bool _aborted;
 
 		private readonly int _ownerThreadId = Thread.CurrentThread.ManagedThreadId;
@@ -37,7 +37,7 @@ namespace vanhaodev.savemanager
 		{
 			if (_depth++ == 0)
 			{
-				_items = new Dictionary<string, byte[]>();
+				_items = new Dictionary<string, PendingWrite>();
 				_aborted = false;
 			}
 		}
@@ -51,20 +51,29 @@ namespace vanhaodev.savemanager
 		}
 
 		/// <summary>Add to the open transaction of this thread. False if none is open.</summary>
-		internal static bool TryAdd(string key, byte[] bytes)
+		internal static bool TryAdd(string key, PendingWrite write)
 		{
 			if (_depth <= 0 || _items == null)
 				return false;
 
-			_items[key] = bytes;
+			if (_items.TryGetValue(key, out var existing))
+				existing.MergeNewer(write);
+			else
+				_items[key] = write;
 			return true;
 		}
 
-		/// <summary>Drop a key from the open transaction (sync writes / Delete must not be overwritten by it).</summary>
-		internal static void Remove(string key)
+		/// <summary>
+		/// Take a key out of the open transaction (sync writes / Delete must not be overwritten by it).
+		/// Returns its pending write so its awaiters can complete with the sync write, or null.
+		/// </summary>
+		internal static PendingWrite Remove(string key)
 		{
-			if (_depth > 0 && _items != null)
-				_items.Remove(key);
+			if (_depth <= 0 || _items == null || !_items.TryGetValue(key, out var write))
+				return null;
+
+			_items.Remove(key);
+			return write;
 		}
 
 		internal static void Reset()
@@ -103,6 +112,11 @@ namespace vanhaodev.savemanager
 				{
 					Debug.LogWarning($"[SaveManager] Transaction closed without Commit(), {items.Count} change(s) discarded: {string.Join(", ", items.Keys)}");
 					Save.RaiseTransactionDiscarded(new List<string>(items.Keys));
+
+					// Awaited SetAsync calls inside the transaction end as canceled.
+					foreach (var write in items.Values)
+						foreach (var waiter in write.Waiters)
+							waiter.TrySetCanceled();
 				}
 				return;
 			}

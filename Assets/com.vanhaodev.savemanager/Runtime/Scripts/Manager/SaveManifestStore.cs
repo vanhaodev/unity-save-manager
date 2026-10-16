@@ -106,52 +106,96 @@ namespace vanhaodev.savemanager
 		}
 
 		/// <summary>
-		/// Write one complete save. changes: key -> bytes, or key -> null to remove the key.
-		/// On failure nothing changes on disk (new files are removed) and the exception propagates.
+		/// A commit split into steps: data files first (one per WriteNext, old save untouched),
+		/// then FinishCommit swaps the manifest (the commit point). Steps may run on different
+		/// frames; a crash in between leaves the previous complete save.
 		/// </summary>
-		internal static void Commit(IReadOnlyDictionary<string, byte[]> changes)
+		internal sealed class CommitJob
+		{
+			internal long Generation;
+			internal Dictionary<string, SaveManifest.Entry> Entries;
+			internal Queue<KeyValuePair<string, byte[]>> Remaining;
+			internal readonly List<string> Written = new();
+		}
+
+		/// <summary>Start a commit. changes: key -> bytes, or key -> null to remove the key.</summary>
+		internal static CommitJob BeginCommit(IReadOnlyDictionary<string, byte[]> changes)
 		{
 			if (!_loaded)
 				throw new System.InvalidOperationException("Save manifest is not loaded.");
 
-			var generation = _current.Generation + 1;
-			var entries = _current.CopyEntries();
-			var written = new List<string>();
+			return new CommitJob
+			{
+				Generation = _current.Generation + 1,
+				Entries = _current.CopyEntries(),
+				Remaining = new Queue<KeyValuePair<string, byte[]>>(changes)
+			};
+		}
 
+		/// <summary>Write the next data file of the job. False when nothing is left.</summary>
+		internal static bool WriteNext(CommitJob job)
+		{
+			if (job.Remaining.Count == 0)
+				return false;
+
+			var kv = job.Remaining.Dequeue();
+			if (kv.Value == null)
+			{
+				job.Entries.Remove(kv.Key);
+				return true;
+			}
+
+			var dataPath = SaveFileStore.DataPath(kv.Key, job.Generation);
+			SaveFileStore.WriteDurable(dataPath, kv.Value);
+			job.Written.Add(dataPath);
+			job.Entries[kv.Key] = new SaveManifest.Entry(job.Generation, SaveFileStore.Hash(kv.Value));
+			return true;
+		}
+
+		/// <summary>Swap the manifest: from here on the new save is the current one.</summary>
+		internal static void FinishCommit(CommitJob job)
+		{
+			// Commits are serialized; another commit in between would make this one stale.
+			if (job.Generation != _current.Generation + 1)
+				throw new System.InvalidOperationException("Save commit is out of date.");
+
+			var next = new SaveManifest(job.Generation, job.Entries);
+
+			// A broken manifest.dat must not be rotated into manifest.dat.bak.
+			if (!_mainFileIsGood && File.Exists(SaveFileStore.ManifestPath))
+				File.Delete(SaveFileStore.ManifestPath);
+
+			SaveFileStore.WriteAtomic(SaveFileStore.ManifestPath, next.Serialize());
+			_mainFileIsGood = true;
+
+			var dropped = _backup;
+			_backup = _current;
+			_current = next;
+			DeleteUnreferenced(dropped);
+		}
+
+		/// <summary>Give up a job: remove its new files, the previous save stays current.</summary>
+		internal static void AbortCommit(CommitJob job)
+		{
+			foreach (var file in job.Written)
+				SaveFileStore.TryDelete(file);
+		}
+
+		/// <summary>
+		/// Write one complete save in one go. On failure nothing changes on disk
+		/// (new files are removed) and the exception propagates.
+		/// </summary>
+		internal static void Commit(IReadOnlyDictionary<string, byte[]> changes)
+		{
+			var job = BeginCommit(changes);
 			try
 			{
-				foreach (var kv in changes)
-				{
-					if (kv.Value == null)
-					{
-						entries.Remove(kv.Key);
-						continue;
-					}
-
-					var dataPath = SaveFileStore.DataPath(kv.Key, generation);
-					SaveFileStore.WriteDurable(dataPath, kv.Value);
-					written.Add(dataPath);
-					entries[kv.Key] = new SaveManifest.Entry(generation, SaveFileStore.Hash(kv.Value));
-				}
-
-				var next = new SaveManifest(generation, entries);
-
-				// A broken manifest.dat must not be rotated into manifest.dat.bak.
-				if (!_mainFileIsGood && File.Exists(SaveFileStore.ManifestPath))
-					File.Delete(SaveFileStore.ManifestPath);
-
-				SaveFileStore.WriteAtomic(SaveFileStore.ManifestPath, next.Serialize());
-				_mainFileIsGood = true;
-
-				var dropped = _backup;
-				_backup = _current;
-				_current = next;
-				DeleteUnreferenced(dropped);
+				while (WriteNext(job)) { }
+				FinishCommit(job);
 			}
 			catch
 			{
-				foreach (var file in written)
-					SaveFileStore.TryDelete(file);
+				AbortCommit(job);
 				throw;
 			}
 		}

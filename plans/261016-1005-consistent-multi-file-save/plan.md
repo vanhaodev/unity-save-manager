@@ -25,9 +25,10 @@ Nguồn: `Logs/savemanager-261015-1347-atomic-write-and-queue-bugs.md`. Chốt v
   - [x] Trao đổi được / không: chỉ ghi README (dev chọn qua secret), không code
 - [x] `Get<T>(key, required)` không tin loại mã hoá trong header — lỗi 9, 10
 - Đọc save từ bản lib cũ (1.0.0 `key.dat`) — cần nghiên cứu
-- Chờ được tới khi lưu xong (`Task`) cho IAP
-- Phân biệt "chưa có save" / "save hỏng" khi load
+- [x] `await Save.SetAsync(...)` / `await Save.FlushAsync()` cho IAP (giữ `Task`, không dùng Unity `Awaitable`: chỉ await được 1 lần, không tự về main thread)
+- [x] `TryGet` → Ok / NotFound / Corrupt / WrongEncryption (Get giữ nguyên)
 
 ## Giới hạn (ghi vào README)
 - Không chặn chép đè nguyên cả bộ save cũ.
 - Không chặn người dịch ngược game.
+- [x] WebGL: lưu nền trên main thread, chia mỗi frame 1 file, đổi mục lục ở frame cuối (vẫn atomic)

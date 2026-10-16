@@ -1,3 +1,7 @@
+Save Manager v1.1.0
+
+Full guide: https://github.com/vanhaodev/unity-save-manager/blob/main/README.md
+
 Quick start:
 
 Import the sample project to see a full usage example.

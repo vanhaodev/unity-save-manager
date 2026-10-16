@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading.Tasks;
 using UnityEngine;
 
 namespace vanhaodev.savemanager
@@ -34,7 +35,7 @@ namespace vanhaodev.savemanager
     /// </summary>
     public static partial class Save
     {
-        private static readonly IReadOnlyDictionary<string, byte[]> NoItems = new Dictionary<string, byte[]>();
+        private static readonly IReadOnlyDictionary<string, PendingWrite> NoItems = new Dictionary<string, PendingWrite>();
 
         // Static state survives play mode when domain reload is disabled.
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -72,8 +73,15 @@ namespace vanhaodev.savemanager
         ///
         /// forceSync = true:
         ///     Save immediately like Set(), safe for exit game.
+        ///
+        /// Returns a Task you may await (optional): completes when this data (or newer data
+        /// for the same key) is on disk, fails if writing fails, is canceled if the transaction
+        /// it belongs to is discarded. After await, code continues on the main thread.
+        /// <code>
+        /// await Save.SetAsync("player", player); // e.g. before confirming a purchase
+        /// </code>
         /// </summary>
-        public static void SetAsync(string key, ISaveable data, EncryptionType encryption = EncryptionType.AES, bool forceSync = false)
+        public static Task SetAsync(string key, ISaveable data, EncryptionType encryption = EncryptionType.AES, bool forceSync = false)
         {
             ValidateKey(key);
             EnsureLoaded();
@@ -83,12 +91,20 @@ namespace vanhaodev.savemanager
             {
                 // Save now (safe)
                 WriteNow(key, bytes);
+                return Task.CompletedTask;
             }
-            else if (!SaveTransaction.TryAdd(key, bytes))
+
+            var waiter = PendingWrite.NewWaiter();
+            var write = new PendingWrite(bytes);
+            write.Waiters.Add(waiter);
+
+            if (!SaveTransaction.TryAdd(key, write))
             {
                 // Save later (background)
-                SaveQueue.Enqueue(new Dictionary<string, byte[]> { [key] = bytes });
+                SaveQueue.Enqueue(new Dictionary<string, PendingWrite> { [key] = write });
             }
+
+            return waiter.Task;
         }
 
         /// <summary>
@@ -119,45 +135,18 @@ namespace vanhaodev.savemanager
         }
 
         /// <summary>
-        /// Load data. Return default if the key was never saved.
-        /// Throws InvalidDataException if the file is broken or was edited (IntegrityFailed is raised too).
-        /// Data still waiting in the background queue is not visible until written.
+        /// Write everything pending in the background and complete when it is on disk
+        /// (also waits for a save already in progress). Fails if writing fails.
+        /// <code>
+        /// Save.SetAsync("player", player);
+        /// Save.SetAsync("inventory", inventory);
+        /// await Save.FlushAsync();
+        /// </code>
         /// </summary>
-        public static T Get<T>(string key) where T : ISaveable, new()
+        public static Task FlushAsync()
         {
-            return Get<T>(key, null);
-        }
-
-        /// <summary>
-        /// Load data that MUST use the given encryption. A file stored with another type
-        /// (e.g. switched to None to read/edit it raw) is rejected: InvalidDataException + IntegrityFailed.
-        /// Recommended for any encrypted save.
-        /// </summary>
-        public static T Get<T>(string key, EncryptionType required) where T : ISaveable, new()
-        {
-            return Get<T>(key, (EncryptionType?)required);
-        }
-
-        private static T Get<T>(string key, EncryptionType? required) where T : ISaveable, new()
-        {
-            ValidateKey(key);
             EnsureLoaded();
-
-            try
-            {
-                byte[] bytes;
-                lock (SaveFileStore.IoLock)
-                {
-                    bytes = SaveManifestStore.ReadVerified(key);
-                }
-
-                return bytes == null ? default : Deserialize<T>(key, bytes, required);
-            }
-            catch (InvalidDataException e)
-            {
-                Report(e.Message);
-                throw;
-            }
+            return SaveQueue.FlushAsync();
         }
 
         /// <summary>
@@ -184,8 +173,10 @@ namespace vanhaodev.savemanager
         // otherwise the transaction's older value would overwrite this one when it closes.
         private static void WriteNow(string key, byte[] bytes)
         {
-            SaveTransaction.Remove(key);
-            SaveQueue.CommitNow(new Dictionary<string, byte[]> { [key] = bytes });
+            // Awaiters of the dropped transaction value complete with this (newer) write.
+            var write = SaveTransaction.Remove(key) ?? new PendingWrite(bytes);
+            write.Data = bytes;
+            SaveQueue.CommitNow(new Dictionary<string, PendingWrite> { [key] = write });
         }
 
         // First call loads the manifest on the calling (main) thread, so integrity
@@ -237,26 +228,5 @@ namespace vanhaodev.savemanager
             return finalWriter.ToArray();
         }
 
-        private static T Deserialize<T>(string key, byte[] bytes, EncryptionType? required) where T : ISaveable, new()
-        {
-            // Read header first (not encrypted)
-            var headerReader = new SaveReader(bytes);
-            var encryption = SaveHeader.Read(headerReader);
-
-            // The header is only a hint: the caller decides which encryption is acceptable.
-            if (required.HasValue && encryption != required.Value)
-                throw new InvalidDataException($"Save '{key}' is stored as {encryption}, expected {required.Value}.");
-
-            // Decrypt data part (after header)
-            var dataBytes = new byte[bytes.Length - SaveHeader.HEADER_SIZE];
-            Array.Copy(bytes, SaveHeader.HEADER_SIZE, dataBytes, 0, dataBytes.Length);
-            dataBytes = SaveEncryption.Decrypt(dataBytes, encryption);
-
-            // Read data
-            var dataReader = new SaveReader(dataBytes);
-            var data = new T();
-            data.ReadSave(dataReader);
-            return data;
-        }
     }
 }

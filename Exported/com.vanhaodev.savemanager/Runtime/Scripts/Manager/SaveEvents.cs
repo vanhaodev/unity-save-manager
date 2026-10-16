@@ -59,6 +59,9 @@ namespace vanhaodev.savemanager
         internal static void RaiseIntegrityFailed(string message) => Dispatch(() => InvokeEach(IntegrityFailed, h => h(message)));
         internal static void RaiseTransactionDiscarded(IReadOnlyList<string> keys) => Dispatch(() => InvokeEach(TransactionDiscarded, h => h(keys)));
 
+        /// <summary>Run on the main thread on a later frame (inline outside Unity).</summary>
+        internal static void RunOnMainThreadLater(Action action) => Dispatch(action);
+
         private static void Dispatch(Action raise)
         {
             var context = _mainContext;
