@@ -47,6 +47,7 @@ namespace vanhaodev.savemanager
                 SaveQueue.Reset();
             }
             SaveTransaction.Reset();
+            SaveEncryption.ResetKey();
             ResetEvents();
         }
 
@@ -55,7 +56,7 @@ namespace vanhaodev.savemanager
         /// Also writes everything still pending, in the same save.
         /// Safe but may block a little.
         /// </summary>
-        public static void Set(string key, ISaveable data, EncryptionType encryption = EncryptionType.None)
+        public static void Set(string key, ISaveable data, EncryptionType encryption = EncryptionType.AES)
         {
             ValidateKey(key);
             EnsureLoaded();
@@ -72,7 +73,7 @@ namespace vanhaodev.savemanager
         /// forceSync = true:
         ///     Save immediately like Set(), safe for exit game.
         /// </summary>
-        public static void SetAsync(string key, ISaveable data, EncryptionType encryption = EncryptionType.None, bool forceSync = false)
+        public static void SetAsync(string key, ISaveable data, EncryptionType encryption = EncryptionType.AES, bool forceSync = false)
         {
             ValidateKey(key);
             EnsureLoaded();
@@ -124,24 +125,39 @@ namespace vanhaodev.savemanager
         /// </summary>
         public static T Get<T>(string key) where T : ISaveable, new()
         {
+            return Get<T>(key, null);
+        }
+
+        /// <summary>
+        /// Load data that MUST use the given encryption. A file stored with another type
+        /// (e.g. switched to None to read/edit it raw) is rejected: InvalidDataException + IntegrityFailed.
+        /// Recommended for any encrypted save.
+        /// </summary>
+        public static T Get<T>(string key, EncryptionType required) where T : ISaveable, new()
+        {
+            return Get<T>(key, (EncryptionType?)required);
+        }
+
+        private static T Get<T>(string key, EncryptionType? required) where T : ISaveable, new()
+        {
             ValidateKey(key);
             EnsureLoaded();
 
-            byte[] bytes;
             try
             {
+                byte[] bytes;
                 lock (SaveFileStore.IoLock)
                 {
                     bytes = SaveManifestStore.ReadVerified(key);
                 }
+
+                return bytes == null ? default : Deserialize<T>(key, bytes, required);
             }
             catch (InvalidDataException e)
             {
                 Report(e.Message);
                 throw;
             }
-
-            return bytes == null ? default : Deserialize<T>(bytes);
         }
 
         /// <summary>
@@ -221,11 +237,15 @@ namespace vanhaodev.savemanager
             return finalWriter.ToArray();
         }
 
-        private static T Deserialize<T>(byte[] bytes) where T : ISaveable, new()
+        private static T Deserialize<T>(string key, byte[] bytes, EncryptionType? required) where T : ISaveable, new()
         {
             // Read header first (not encrypted)
             var headerReader = new SaveReader(bytes);
             var encryption = SaveHeader.Read(headerReader);
+
+            // The header is only a hint: the caller decides which encryption is acceptable.
+            if (required.HasValue && encryption != required.Value)
+                throw new InvalidDataException($"Save '{key}' is stored as {encryption}, expected {required.Value}.");
 
             // Decrypt data part (after header)
             var dataBytes = new byte[bytes.Length - SaveHeader.HEADER_SIZE];

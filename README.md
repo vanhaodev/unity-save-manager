@@ -52,19 +52,57 @@ public class Example2 : MonoBehaviour
 {
     void LoadSaveEncryption()
     {
-        // Set AES key first (call once at game start)
-        SaveEncryption.SetKey(EncryptionType.AES, "my-secret-key");
+        // Set the secret first (once at game start, BEFORE any Save call).
+        // Used for AES and for signing saves.
+        SaveEncryption.SetKey("my-secret-key");
 
         // Save with AES encryption
         var user = new UserModel { Name = "vanhaodev" };
         Save.Set("user-encrypted", user, EncryptionType.AES);
 
-        // Load (auto-detect encryption from file)
-        var loaded = Save.Get<UserModel>("user-encrypted");
+        // Load, requiring AES (a file switched to "no encryption" is rejected)
+        var loaded = Save.Get<UserModel>("user-encrypted", EncryptionType.AES);
         Debug.Log(loaded.Name); // "vanhaodev"
     }
 }
 ```
+
+### Secret and signed saves
+
+Saves are **always signed** and **AES-encrypted by default**. Editing any save file — even recomputing fingerprints — is detected: the previous valid save is used and `Save.IntegrityFailed` is raised.
+
+`SaveEncryption.SetKey(secret)` turns any string into your own two strong keys (one encrypts, one signs).
+
+> **No `SetKey`?** A built-in default key is used. Saves still work, are encrypted and signed, and can be copied between devices — but the default key is public (it is in this library's source), so anyone who reads it can decrypt and re-sign saves. Call `SetKey` for real protection.
+
+To store a key without encryption (still signed), pass `EncryptionType.None`.
+
+**Shareable or not — you choose with the secret:**
+
+| Secret | Result |
+|--------|--------|
+| Same on every device (e.g. built from constants in your code) | Save files can be copied between devices / players |
+| Per player (e.g. hash of the account id) | A save only loads for its owner; copied saves are rejected |
+
+> Don't use a device id as the secret: the player loses the save when changing phones.
+
+### Changing the secret in an update (players keep their saves)
+
+Keep the secrets of older versions in the update. Saves made with an old secret load once and are moved to the new one automatically:
+
+```csharp
+// v1 shipped WITHOUT SetKey  ->  v2 adds a secret:
+SaveEncryption.SetKey("secret-v2", SaveEncryption.DefaultKey);
+
+// v3 changes the secret again (players may jump straight from v1 to v3):
+SaveEncryption.SetKey("secret-v3", "secret-v2", SaveEncryption.DefaultKey);
+```
+
+- Current secret first, then older ones. A player who skipped versions still loads, as long as their secret is listed.
+- After a save is moved, the old secret is no longer needed for it.
+- **Security:** while an old secret is listed, a save signed with it is still accepted. For `DefaultKey` (public) this means a forged save is accepted — drop old secrets once players had time to update.
+
+If a save matches **no** listed secret (secret forgotten, or files edited), it is **not deleted**: it is moved to `SaveData/quarantine/<time>/`, the game starts with an empty save and `Save.IntegrityFailed` is raised. Ship an update that lists the right secret and move the files back to recover.
 
 ---
 
@@ -186,7 +224,7 @@ Save.IntegrityFailed += message => Debug.LogWarning("Save problem: " + message);
 
 If a save fails (disk full, file locked...), the data is kept and written again on the next `SetAsync` / `Set` / `Flush`.
 
-**Limits:** fingerprints are not signed yet, so a user who edits a file *and* recomputes the index is not detected. Restoring a full copy of an older save folder, or reverse-engineering the game, cannot be prevented by a local save library.
+**Limits:** without `SaveEncryption.SetKey`, the public default key is used, so a user who knows it can edit and re-sign saves. Restoring a full copy of an older save folder, or reverse-engineering the game to extract the secret, cannot be prevented by a local save library.
 
 > **1.1.0:** save files use a new layout. Saves written by 1.0.x are not loaded.
 
@@ -221,6 +259,7 @@ Save.TransactionDiscarded += keys => Debug.LogWarning("Not saved: " + string.Joi
 | `Save.BeginTransaction()` | `using` block + `Commit()`: all `SetAsync` inside are saved together, or none |
 | `Save.Flush()` | Write everything pending now (sync). Use on quit / pause |
 | `Save.Get<T>(key)` | Load data. Returns `null` if never saved. Throws `InvalidDataException` if the file is broken |
+| `Save.Get<T>(key, required)` | Same, but the file must use `required` encryption, otherwise rejected (recommended for encrypted saves) |
 | `Save.Exists(key)` | Check if key has been saved |
 | `Save.Delete(key)` | Delete key (sync) |
 | `Save.SaveStarted` | Event `(keys)`: writing these keys started |
@@ -233,14 +272,16 @@ Save.TransactionDiscarded += keys => Debug.LogWarning("Not saved: " + string.Joi
 
 | Method | Description |
 |--------|-------------|
-| `SaveEncryption.SetKey(type, key)` | Set encryption key. Call once at game start |
+| `SaveEncryption.SetKey(secret, previousSecrets...)` | Set the secret for AES + save signing. Call once at game start, before any Save call. List older secrets to keep players' saves after changing it |
+| `SaveEncryption.DefaultKey` | Secret used when `SetKey` is never called (public) |
+| `SaveEncryption.SetKey(type, key)` | Old form, same as `SetKey(key)` |
 
 ### EncryptionType
 
 | Value | Description |
 |-------|-------------|
-| `EncryptionType.None` | No encryption (default) |
-| `EncryptionType.AES` | AES-256 encryption |
+| `EncryptionType.None` | No encryption (still signed) |
+| `EncryptionType.AES` | AES-256 encryption (default) |
 
 ### ISaveable
 

@@ -11,13 +11,16 @@ namespace vanhaodev.savemanager.Samples.Inventory
 
 		private void Awake()
 		{
-			//set AES key before save/load
-			SaveEncryption.SetKey(EncryptionType.AES, "aeskey_12345678**..hardcoded"); //any string you want
+			// Set the secret before ANY save/load: used for AES and for signing saves (detects edited files).
+			// Any string works. Same string on every device = saves can be shared;
+			// per-player string (e.g. account id) = a save only loads for its owner.
+			SaveEncryption.SetKey("aeskey_12345678**..hardcoded");
 		}
 
 		public void LoadData()
 		{
-			Account = Save.Get<AccountModel>(AccountFileName);
+			// Require AES: a file switched to "no encryption" is rejected
+			Account = Save.Get<AccountModel>(AccountFileName, EncryptionType.AES);
 			
 			if (Account == null)
 			{

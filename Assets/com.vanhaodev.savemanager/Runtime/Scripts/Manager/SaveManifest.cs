@@ -51,7 +51,11 @@ namespace vanhaodev.savemanager
 		/// <summary>Copy of the entries, for building the next manifest.</summary>
 		internal Dictionary<string, Entry> CopyEntries() => new(_entries);
 
-		/// <summary>Body + SHA-256 of the body, so a truncated/garbled manifest is detected.</summary>
+		/// <summary>
+		/// Body + signature of the body: HMAC with the SetKey signing key (edits need the key),
+		/// or plain SHA-256 without a key (only detects truncated / garbled files).
+		/// Data files are covered too, because their fingerprints are inside the signed body.
+		/// </summary>
 		internal byte[] Serialize()
 		{
 			var w = new SaveWriter();
@@ -68,7 +72,7 @@ namespace vanhaodev.savemanager
 			}
 
 			var body = w.ToArray();
-			var hash = SaveFileStore.Hash(body);
+			var hash = SaveEncryption.Sign(body);
 
 			var result = new byte[body.Length + HASH_SIZE];
 			Buffer.BlockCopy(body, 0, result, 0, body.Length);
@@ -76,8 +80,11 @@ namespace vanhaodev.savemanager
 			return result;
 		}
 
-		/// <summary>Parse manifest bytes. Throws InvalidDataException if broken.</summary>
-		internal static SaveManifest Deserialize(byte[] bytes)
+		/// <summary>
+		/// Parse manifest bytes, accepting a signature from the current or a previous key.
+		/// signedWith tells which one matched. Throws InvalidDataException if broken.
+		/// </summary>
+		internal static SaveManifest Deserialize(byte[] bytes, out SaveEncryption.KeySet signedWith)
 		{
 			if (bytes.Length < HASH_SIZE + MAGIC.Length)
 				throw new InvalidDataException("Manifest too short");
@@ -88,8 +95,18 @@ namespace vanhaodev.savemanager
 			Buffer.BlockCopy(bytes, 0, body, 0, bodyLength);
 			Buffer.BlockCopy(bytes, bodyLength, storedHash, 0, HASH_SIZE);
 
-			if (!SaveFileStore.HashEquals(SaveFileStore.Hash(body), storedHash))
-				throw new InvalidDataException("Manifest checksum mismatch");
+			signedWith = null;
+			foreach (var keys in SaveEncryption.AcceptedKeys)
+			{
+				if (SaveEncryption.SignatureEquals(SaveEncryption.Sign(body, keys), storedHash))
+				{
+					signedWith = keys;
+					break;
+				}
+			}
+
+			if (signedWith == null)
+				throw new InvalidDataException("Manifest signature mismatch (edited, broken, or different SetKey secret)");
 
 			try
 			{

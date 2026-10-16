@@ -28,7 +28,7 @@ namespace vanhaodev.savemanager.Editor
 			}
 
 			// Whole folder: save index, data files and their backups belong together.
-			var files = Directory.Exists(SaveFolder) ? Directory.GetFiles(SaveFolder) : new string[0];
+			var files = Directory.Exists(SaveFolder) ? Directory.GetFiles(SaveFolder, "*", SearchOption.AllDirectories) : new string[0];
 
 			if (files.Length == 0)
 			{
@@ -45,9 +45,16 @@ namespace vanhaodev.savemanager.Editor
 
 			if (!confirm) return;
 
+			// Includes quarantine/ (saves that could not be verified).
+			// Includes quarantine/ (saves that could not be verified).
 			foreach (var file in files)
 			{
 				File.Delete(file);
+			}
+
+			foreach (var dir in Directory.GetDirectories(SaveFolder))
+			{
+				Directory.Delete(dir, true);
 			}
 
 			EditorUtility.DisplayDialog("Delete Save Data", $"Deleted {files.Length} file(s).", "OK");

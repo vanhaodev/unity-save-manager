@@ -19,11 +19,11 @@ Nguồn: `Logs/savemanager-261015-1347-atomic-write-and-queue-bugs.md`. Chốt v
 - [ ] Test trong Unity Editor + build Android/iOS
 
 ## Để lần sau
-- `SetKey` nâng cấp (tạo khoá chắc, tách khoá mã hoá / khoá ký) — lỗi 11, 12
-- Ký mục lục bằng khoá bí mật (MAC) → chặn sửa tay + tự tính lại dấu vân tay. Hiện chỉ có dấu vân tay, chưa ký.
+- [x] `SetKey(secret)`: PBKDF2 → khoá AES + khoá ký riêng — lỗi 11, 12
+- [x] Ký mục lục HMAC khi có SetKey; không xác thực được → chuyển vào quarantine/, không xoá
   - Khoá do dev game truyền vào `SetKey` (lib không quan tâm nguồn). Lib tự tách khoá ký / khoá mã hoá.
-  - 2 lựa chọn cho dev: save **trao đổi được** (secret chung mọi máy) / **không trao đổi được** (secret theo account id). Không cần cờ riêng — ghi rõ trong README, cân nhắc overload `SetKey(secret, ownerId)`. Cảnh báo: dùng device id → đổi máy mất save.
-- Mã hoá nội dung chắc hơn, không tin loại mã hoá trong header — lỗi 9, 10 (phần giấu nội dung)
+  - [x] Trao đổi được / không: chỉ ghi README (dev chọn qua secret), không code
+- [x] `Get<T>(key, required)` không tin loại mã hoá trong header — lỗi 9, 10
 - Đọc save từ bản lib cũ (1.0.0 `key.dat`) — cần nghiên cứu
 - Chờ được tới khi lưu xong (`Task`) cho IAP
 - Phân biệt "chưa có save" / "save hỏng" khi load

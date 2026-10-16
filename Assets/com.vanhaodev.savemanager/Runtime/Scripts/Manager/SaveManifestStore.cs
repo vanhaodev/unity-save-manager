@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
+using UnityEngine;
 
 namespace vanhaodev.savemanager
 {
@@ -47,26 +48,30 @@ namespace vanhaodev.savemanager
 				return;
 
 			SaveFileStore.EnsureFolder();
+			var canCleanUp = true;
+			SaveEncryption.KeySet loadedWith = null;
 
 			var path = SaveFileStore.ManifestPath;
 			var bakPath = SaveFileStore.BakPath(path);
 
-			var main = TryLoadVerified(path, problems);
+			var main = TryLoadVerified(path, problems, out var mainKeys);
 			if (main != null)
 			{
 				_current = main;
+				loadedWith = mainKeys;
 				_backup = TryParse(bakPath);
 				_mainFileIsGood = true;
 			}
 			else
 			{
-				var backup = TryLoadVerified(bakPath, problems);
+				var backup = TryLoadVerified(bakPath, problems, out var backupKeys);
 				if (backup != null)
 				{
 					if (File.Exists(path))
 						problems.Add("Save data failed integrity check, restored previous save.");
 
 					_current = backup;
+					loadedWith = backupKeys;
 					_backup = null;
 					_mainFileIsGood = RestoreMainFromBackup(path, bakPath);
 				}
@@ -77,14 +82,27 @@ namespace vanhaodev.savemanager
 					// may hold the only good copy of some keys.
 					var mainParsed = TryParse(path);
 					var bakParsed = TryParse(bakPath);
+
+					// No signature verifies at all (wrong / missing SetKey secret, or edited):
+					// never delete — move everything aside so it can be recovered, start empty.
+					if (mainParsed == null && bakParsed == null && (File.Exists(path) || File.Exists(bakPath)))
+						canCleanUp = Quarantine(problems);
+
 					_current = mainParsed ?? bakParsed ?? SaveManifest.Empty;
 					_backup = mainParsed != null ? bakParsed : null;
 					_mainFileIsGood = mainParsed != null || !File.Exists(path);
 				}
 			}
 
-			DeleteOrphans();
+			// Unverifiable files that could not be moved aside must not be deleted either.
+			if (canCleanUp)
+				DeleteOrphans();
 			_loaded = true;
+
+			// Loaded with a previous SetKey secret: move it to the current one right away,
+			// so later versions no longer need the old secret.
+			if (loadedWith != null && loadedWith != SaveEncryption.CurrentKeys)
+				MigrateToCurrentKey(loadedWith);
 		}
 
 		/// <summary>
@@ -158,11 +176,14 @@ namespace vanhaodev.savemanager
 			return bytes;
 		}
 
-		private static SaveManifest TryParse(string path)
+		private static SaveManifest TryParse(string path) => TryParse(path, out _);
+
+		private static SaveManifest TryParse(string path, out SaveEncryption.KeySet signedWith)
 		{
+			signedWith = null;
 			try
 			{
-				return File.Exists(path) ? SaveManifest.Deserialize(File.ReadAllBytes(path)) : null;
+				return File.Exists(path) ? SaveManifest.Deserialize(File.ReadAllBytes(path), out signedWith) : null;
 			}
 			catch (System.Exception)
 			{
@@ -171,12 +192,13 @@ namespace vanhaodev.savemanager
 		}
 
 		// Manifest is valid only if it parses AND every file it points to matches its fingerprint.
-		private static SaveManifest TryLoadVerified(string path, List<string> problems)
+		private static SaveManifest TryLoadVerified(string path, List<string> problems, out SaveEncryption.KeySet signedWith)
 		{
+			signedWith = null;
 			if (!File.Exists(path))
 				return null;
 
-			var manifest = TryParse(path);
+			var manifest = TryParse(path, out signedWith);
 			if (manifest == null)
 			{
 				problems.Add($"{Path.GetFileName(path)} is corrupt.");
@@ -214,6 +236,41 @@ namespace vanhaodev.savemanager
 			{
 				// Still loaded from bak in memory; the next commit removes the broken main first.
 				return !File.Exists(path);
+			}
+		}
+
+		private static void MigrateToCurrentKey(SaveEncryption.KeySet from)
+		{
+			try
+			{
+				Commit(SaveKeyMigration.BuildChanges(_current, from));
+				Debug.Log("[SaveManager] Save moved from a previous SetKey secret to the current one.");
+			}
+			catch (System.Exception e)
+			{
+				// Save stays readable with the previous secret; retried on next launch.
+				Debug.LogWarning($"[SaveManager] Could not move save to the current secret, will retry next launch.\n{e}");
+			}
+		}
+
+		// Move manifests + data files into quarantine/{timestamp}/ (the folder is never read again).
+		private static bool Quarantine(List<string> problems)
+		{
+			var target = Path.Combine(SaveFileStore.Folder, "quarantine", System.DateTime.Now.ToString("yyyyMMdd-HHmmss"));
+
+			try
+			{
+				Directory.CreateDirectory(target);
+				foreach (var file in Directory.GetFiles(SaveFileStore.Folder))
+					File.Move(file, Path.Combine(target, Path.GetFileName(file)));
+
+				problems.Add($"Save could not be verified (different SetKey secret, or files edited). Moved to {target}, starting with an empty save.");
+				return true;
+			}
+			catch (System.Exception e)
+			{
+				problems.Add($"Save could not be verified and could not be moved to quarantine: {e.Message}");
+				return false;
 			}
 		}
 
