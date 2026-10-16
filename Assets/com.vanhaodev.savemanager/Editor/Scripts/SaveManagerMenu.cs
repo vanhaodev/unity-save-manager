@@ -20,13 +20,15 @@ namespace vanhaodev.savemanager.Editor
 		[MenuItem("Tools/Save Manager/Delete All Save Data")]
 		private static void DeleteAllSaveData()
 		{
-			if (!Directory.Exists(SaveFolder))
+			// The running game keeps the save index in memory and would write it back.
+			if (EditorApplication.isPlaying)
 			{
-				EditorUtility.DisplayDialog("Delete Save Data", "No save files found.", "OK");
+				EditorUtility.DisplayDialog("Delete Save Data", "Exit Play Mode before deleting save data.", "OK");
 				return;
 			}
 
-			var files = Directory.GetFiles(SaveFolder, "*.dat");
+			// Whole folder: save index, data files and their backups belong together.
+			var files = Directory.Exists(SaveFolder) ? Directory.GetFiles(SaveFolder) : new string[0];
 
 			if (files.Length == 0)
 			{

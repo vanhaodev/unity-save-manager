@@ -142,15 +142,53 @@ public class Example3 : MonoBehaviour
 
 ---
 
-## Atomic Save (Anti-Corruption)
+## Consistent Save (Anti-Corruption)
 
-All save operations use **atomic write** to prevent file corruption:
+All keys always load from **the same save**. A crash or error while saving never leaves a mix of old and new data:
 
-1. Write data to temp file (`save.dat.tmp`)
-2. Delete old file (`save.dat`)
-3. Rename temp to main (`save.dat.tmp` → `save.dat`)
+1. New data is written to new files (`money.43.sav`), old files are not touched
+2. When every file is fully on disk, the save index (`manifest.dat`) switches to the new files in one step
+3. Old files are deleted
 
-**Why?** If game crashes during save, only temp file is corrupted. Main file stays safe.
+If the game crashes before step 2, the next load uses the previous complete save. Only changed keys are written, so saving stays fast.
+
+### Save related data together with a transaction
+
+Data that must stay in sync (quest reward + money) should be saved in one transaction, like a SQL transaction:
+
+```csharp
+using (var tx = Save.BeginTransaction())
+{
+    Save.SetAsync("quest", quest);
+    Save.SetAsync("money", money);
+    tx.Commit();
+}   // both are written together, or not at all
+```
+
+- Every `SetAsync` inside the block joins the transaction, even when called from other classes.
+- If the block ends without `Commit()` (exception, early return, forgotten), **nothing** inside is saved and a warning is logged. The save on disk stays as it was. Your in-memory game data is not rolled back.
+- Nested transactions join the outer one. Do not `await` inside a transaction.
+
+### Save on quit / pause
+
+```csharp
+void OnApplicationPause(bool paused) { if (paused) Save.Flush(); }
+void OnApplicationQuit() => Save.Flush();
+```
+
+### Broken or edited save files
+
+Each file's fingerprint is stored in the save index. If a file is broken, swapped or renamed, the library falls back to the previous complete save and raises `Save.IntegrityFailed`:
+
+```csharp
+Save.IntegrityFailed += message => Debug.LogWarning("Save problem: " + message);
+```
+
+If a save fails (disk full, file locked...), the data is kept and written again on the next `SetAsync` / `Set` / `Flush`.
+
+**Limits:** fingerprints are not signed yet, so a user who edits a file *and* recomputes the index is not detected. Restoring a full copy of an older save folder, or reverse-engineering the game, cannot be prevented by a local save library.
+
+> **1.1.0:** save files use a new layout. Saves written by 1.0.x are not loaded.
 
 ---
 
@@ -160,11 +198,14 @@ All save operations use **atomic write** to prevent file corruption:
 
 | Method | Description |
 |--------|-------------|
-| `Save.Set(key, data, encryption?)` | Save immediately (sync). Use for exit game, checkpoint |
+| `Save.Set(key, data, encryption?)` | Save immediately (sync), together with everything pending. Use for checkpoint, purchase |
 | `Save.SetAsync(key, data, encryption?, forceSync?)` | Save in background (no lag). Use for normal gameplay |
-| `Save.Get<T>(key)` | Load data. Returns `null` if file not exists |
-| `Save.Exists(key)` | Check if file exists |
-| `Save.Delete(key)` | Delete file |
+| `Save.BeginTransaction()` | `using` block + `Commit()`: all `SetAsync` inside are saved together, or none |
+| `Save.Flush()` | Write everything pending now (sync). Use on quit / pause |
+| `Save.Get<T>(key)` | Load data. Returns `null` if never saved. Throws `InvalidDataException` if the file is broken |
+| `Save.Exists(key)` | Check if key has been saved |
+| `Save.Delete(key)` | Delete key (sync) |
+| `Save.IntegrityFailed` | Event: save files broken / swapped / edited; previous save was used |
 
 ### SaveEncryption
 
