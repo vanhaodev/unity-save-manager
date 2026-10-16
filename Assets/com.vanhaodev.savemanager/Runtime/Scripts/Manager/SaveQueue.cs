@@ -70,7 +70,7 @@ namespace vanhaodev.savemanager
 
 				try
 				{
-					SaveManifestStore.Commit(batch);
+					CommitAndNotify(batch);
 				}
 				catch
 				{
@@ -106,7 +106,7 @@ namespace vanhaodev.savemanager
 
 						try
 						{
-							SaveManifestStore.Commit(batch);
+							CommitAndNotify(batch);
 						}
 						catch (Exception e)
 						{
@@ -131,6 +131,25 @@ namespace vanhaodev.savemanager
 					_isRunning = false;
 				}
 			}
+		}
+
+		// Commit + SaveStarted / Saved / SaveFailed hooks (delivered later on the main thread).
+		private static void CommitAndNotify(Dictionary<string, byte[]> batch)
+		{
+			var keys = new List<string>(batch.Keys);
+			Save.RaiseSaveStarted(keys);
+
+			try
+			{
+				SaveManifestStore.Commit(batch);
+			}
+			catch (Exception e)
+			{
+				Save.RaiseSaveFailed(keys, e);
+				throw;
+			}
+
+			Save.RaiseSaved(keys);
 		}
 
 		private static Dictionary<string, byte[]> TakePendingLocked()

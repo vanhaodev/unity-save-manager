@@ -100,7 +100,10 @@ namespace vanhaodev.savemanager
 			if (aborted)
 			{
 				if (items != null && items.Count > 0)
+				{
 					Debug.LogWarning($"[SaveManager] Transaction closed without Commit(), {items.Count} change(s) discarded: {string.Join(", ", items.Keys)}");
+					Save.RaiseTransactionDiscarded(new List<string>(items.Keys));
+				}
 				return;
 			}
 

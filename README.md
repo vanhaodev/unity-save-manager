@@ -192,6 +192,24 @@ If a save fails (disk full, file locked...), the data is kept and written again 
 
 ---
 
+## Hooks (Events)
+
+Subscribe to show a saving icon, popups, analytics or cheat reports — it's up to you:
+
+```csharp
+Save.SaveStarted          += keys => savingIcon.SetActive(true);
+Save.Saved                += keys => savingIcon.SetActive(false);
+Save.SaveFailed           += (keys, error) => ShowPopup("Could not save, please free some space");
+Save.IntegrityFailed      += message => CheatReporter.Report(message);
+Save.TransactionDiscarded += keys => Debug.LogWarning("Not saved: " + string.Join(", ", keys));
+```
+
+- Always called on the **main thread** (safe to touch UI), on the next frame — even for `Set` / `Flush`.
+- An exception in your handler is logged and never breaks saving or other handlers.
+- Events right before the app quits may not be delivered.
+
+---
+
 ## API Reference
 
 ### Save
@@ -205,7 +223,11 @@ If a save fails (disk full, file locked...), the data is kept and written again 
 | `Save.Get<T>(key)` | Load data. Returns `null` if never saved. Throws `InvalidDataException` if the file is broken |
 | `Save.Exists(key)` | Check if key has been saved |
 | `Save.Delete(key)` | Delete key (sync) |
-| `Save.IntegrityFailed` | Event: save files broken / swapped / edited; previous save was used |
+| `Save.SaveStarted` | Event `(keys)`: writing these keys started |
+| `Save.Saved` | Event `(keys)`: these keys are safely on disk (deleted keys included) |
+| `Save.SaveFailed` | Event `(keys, error)`: writing failed; previous save intact, retried on next save |
+| `Save.IntegrityFailed` | Event `(message)`: save files broken / swapped / edited; previous save was used |
+| `Save.TransactionDiscarded` | Event `(keys)`: transaction closed without `Commit()`, changes not saved |
 
 ### SaveEncryption
 

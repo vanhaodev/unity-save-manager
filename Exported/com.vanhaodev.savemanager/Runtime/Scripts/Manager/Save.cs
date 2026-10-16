@@ -32,15 +32,8 @@ namespace vanhaodev.savemanager
     /// - Related data (quest + money) → wrap in Save.BeginTransaction()<br/>
     /// - Important save / quit / pause → Set or Flush
     /// </summary>
-    public static class Save
+    public static partial class Save
     {
-        /// <summary>
-        /// Raised when save files are broken, swapped or edited outside the game.
-        /// The library already fell back to the last valid save (or Get throws);
-        /// use this to log or report cheating. Called on the thread that loads (main thread).
-        /// </summary>
-        public static event Action<string> IntegrityFailed;
-
         private static readonly IReadOnlyDictionary<string, byte[]> NoItems = new Dictionary<string, byte[]>();
 
         // Static state survives play mode when domain reload is disabled.
@@ -54,7 +47,7 @@ namespace vanhaodev.savemanager
                 SaveQueue.Reset();
             }
             SaveTransaction.Reset();
-            IntegrityFailed = null;
+            ResetEvents();
         }
 
         /// <summary>
@@ -186,6 +179,7 @@ namespace vanhaodev.savemanager
             if (SaveManifestStore.IsLoaded)
                 return;
 
+            CaptureMainThread();
             var problems = new List<string>();
             lock (SaveFileStore.IoLock)
             {
@@ -199,7 +193,7 @@ namespace vanhaodev.savemanager
         private static void Report(string message)
         {
             Debug.LogWarning($"[SaveManager] {message}");
-            IntegrityFailed?.Invoke(message);
+            RaiseIntegrityFailed(message);
         }
 
         // Key becomes part of a file name.
