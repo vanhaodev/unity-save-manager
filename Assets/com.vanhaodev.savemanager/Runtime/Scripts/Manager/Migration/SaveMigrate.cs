@@ -22,24 +22,6 @@ namespace vanhaodev.savemanager
 		// domain reload) must not commit into or block the new session.
 		private static int _session;
 
-		/// <summary>(saveVersion, gameVersion): migration started.</summary>
-		public static event Action<int, int> MigrationStarted;
-
-		/// <summary>(stepFrom, stepTo, progress 0..1): one step finished (in memory, not saved yet).</summary>
-		public static event Action<int, int, float> MigrationStepCompleted;
-
-		/// <summary>(fromVersion, toVersion): the migrated save is on disk.</summary>
-		public static event Action<int, int> MigrationCompleted;
-
-		/// <summary>A step, Verify or the setup failed. The save is unchanged and saving is blocked (e.AllowWrite() to save anyway).</summary>
-		public static event Action<SaveMigrationFailure> MigrationFailed;
-
-		/// <summary>
-		/// No migration starts at the save's version (older than every step). Saving is blocked;
-		/// the game decides (start over, show a message...). Raised right away.
-		/// </summary>
-		public static event Action<SaveVersionEvent> SaveTooOld;
-
 		/// <summary>
 		/// Apply all save settings at game start, before any Save call. In the Editor the
 		/// migration chain is checked here too, so a missing or duplicate step fails at Play.
@@ -58,6 +40,8 @@ namespace vanhaodev.savemanager
 				SaveEncryption.SetKey(config.Secret, config.PreviousSecrets ?? Array.Empty<string>());
 			if (config.SchemaVersion.HasValue)
 				SchemaVersion = config.SchemaVersion.Value;
+			if (config.BackupsToKeep.HasValue)
+				BackupsToKeep = config.BackupsToKeep.Value;
 			MigrationSets.Clear();
 			MigrationSets.AddRange(config.MigrationSets);
 			_verify = config.VerifyCheck;
@@ -226,6 +210,8 @@ namespace vanhaodev.savemanager
 			var files = run.Context.BuildFileChanges();
 			lock (SaveFileStore.IoLock)
 			{
+				// Backup first: a migration with a logic bug can be undone. No backup, no migration.
+				SaveBackupStore.Create(_backupsToKeep);
 				SaveManifestStore.Commit(files, _schemaVersion);
 			}
 
@@ -249,36 +235,6 @@ namespace vanhaodev.savemanager
 			BlockWrites("migrating the save failed, it is unchanged on disk");
 			Dispatch(() => InvokeEach(MigrationFailed, h => h(failure)));
 			return SaveMigrationResult.Failed;
-		}
-
-		private static void RaiseMigrationStarted(SaveMigrationRun run)
-		{
-			var from = run.Context.SaveVersion;
-			var to = run.Context.GameVersion;
-			Dispatch(() => InvokeEach(MigrationStarted, h => h(from, to)));
-		}
-
-		// offThread: called from a worker, so the progress callback must go to the main thread.
-		private static void RaiseStepCompleted(SaveMigrationRun run, float progress, Action<float> callback, bool offThread)
-		{
-			var from = run.Current.From;
-			var to = run.Current.To;
-			Dispatch(() => InvokeEach(MigrationStepCompleted, h => h(from, to, progress)));
-
-			if (callback == null)
-				return;
-			if (offThread)
-				Dispatch(() => InvokeEach(callback, h => h(progress)));
-			else
-				InvokeEach(callback, h => h(progress));
-		}
-
-		// Resumes on a later frame (immediately outside Unity).
-		private static Task NextFrame()
-		{
-			var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-			Dispatch(() => tcs.TrySetResult(true));
-			return tcs.Task;
 		}
 
 		private static void ResetMigration()

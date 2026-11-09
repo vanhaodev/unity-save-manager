@@ -38,6 +38,9 @@ namespace vanhaodev.savemanager
 		/// </summary>
 		public int? SchemaVersion { get; set; }
 
+		/// <summary>Same as Save.BackupsToKeep (default 3). Left unset, keeps the current value.</summary>
+		public int? BackupsToKeep { get; set; }
+
 		/// <summary>Same as SaveEncryption.SetKey: current secret first, then older ones.</summary>
 		public void SetKey(string secret, params string[] previousSecrets)
 		{

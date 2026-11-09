@@ -52,6 +52,7 @@ namespace vanhaodev.savemanager
             ResetEvents();
             ResetSchema();
             ResetMigration();
+            ResetBackup();
         }
 
         /// <summary>

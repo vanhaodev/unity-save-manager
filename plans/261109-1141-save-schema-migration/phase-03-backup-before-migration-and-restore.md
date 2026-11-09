@@ -1,7 +1,9 @@
 # Phase 3 — Backup trước migrate + khôi phục backup
 
 ## Overview
-Ưu tiên: cao · Trạng thái: chưa làm · Phụ thuộc phase 1, 2.
+Ưu tiên: cao · Trạng thái: xong code, chưa test trong Unity · Phụ thuộc phase 1, 2.
+
+Quyết định user (2026-11-09): sau `AllowWrite()` save có thể lẫn layout → giữ như vậy + backup trước khi cho ghi (cả 3 lý do chặn), và thêm `Save.StartFresh()` (backup rồi bắt đầu save trống ở version game).
 
 ## Requirements
 - Luôn bật. Trước commit migrate: copy `manifest.dat` + các file `.sav` đang dùng vào `SaveData/backups/schema-<N>-<yyyyMMdd-HHmmss>/`.
@@ -22,10 +24,10 @@
 - Thư mục con `backups/` không bị `ListDataFiles`/`DeleteOrphans`/`Quarantine` đụng tới (chỉ quét file cấp trên) — xác nhận lại khi làm.
 
 ## Todo
-- [ ] Backup tự động trước migrate / trước ghi đè save mới hơn
-- [ ] Giữ N bản gần nhất
-- [ ] Liệt kê + khôi phục (kiểm tra trước, backup save hiện tại)
-- [ ] Compile sạch
+- [x] Backup tự động trước migrate / trước AllowWrite (mọi lý do chặn) / trước Restore / StartFresh
+- [x] Giữ N bản gần nhất (`Save.BackupsToKeep`, `c.BackupsToKeep`)
+- [x] Liệt kê + khôi phục (kiểm tra trước, backup save hiện tại) + `Save.StartFresh()`
+- [x] Compile sạch + harness 49/49 pass
 
 ## Success criteria
 - Migrate xong có đúng 1 thư mục backup chứa save schema cũ; khôi phục → save về schema cũ, migrate lại chạy được.

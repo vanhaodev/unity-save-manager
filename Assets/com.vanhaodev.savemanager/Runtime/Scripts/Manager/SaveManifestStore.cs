@@ -60,6 +60,19 @@ namespace vanhaodev.savemanager
 		internal static List<string> KeysSnapshot() => new(_current.Entries.Keys);
 
 		/// <summary>
+		/// The save in use as a manifest (signed now, with its schema number) plus its data files,
+		/// for a backup. Built from memory, so it is right even when loaded from manifest.dat.bak.
+		/// </summary>
+		internal static (byte[] manifest, List<string> dataFiles, int schema) Snapshot()
+		{
+			var manifest = new SaveManifest(_current.Generation, _current.CopyEntries(), _schema);
+			var files = new List<string>();
+			foreach (var kv in _current.Entries)
+				files.Add(SaveFileStore.DataPath(kv.Key, kv.Value.Generation));
+			return (manifest.Serialize(), files, _schema);
+		}
+
+		/// <summary>
 		/// Load the newest manifest whose files all pass the fingerprint check.
 		/// Falls back to the backup manifest (previous complete save) if the main one
 		/// or any of its files is broken / swapped / edited. Problems are appended to

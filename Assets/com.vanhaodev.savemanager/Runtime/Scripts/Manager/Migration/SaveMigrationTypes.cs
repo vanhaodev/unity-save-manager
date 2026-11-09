@@ -40,10 +40,10 @@ namespace vanhaodev.savemanager
 		/// <summary>Save.SchemaVersion of the game.</summary>
 		public int GameVersion { get; }
 
-		/// <summary>Start version of the step that failed; null if the setup or Verify failed.</summary>
+		/// <summary>Start version of the step that failed; null if the setup, Verify, backup or saving failed.</summary>
 		public int? StepFrom { get; }
 
-		/// <summary>End version of the step that failed; null if the setup or Verify failed.</summary>
+		/// <summary>End version of the step that failed; null if the setup, Verify, backup or saving failed.</summary>
 		public int? StepTo { get; }
 
 		public Exception Error { get; }
@@ -62,7 +62,7 @@ namespace vanhaodev.savemanager
 
 		public override string ToString()
 		{
-			var where = StepFrom.HasValue ? $"step {StepFrom} -> {StepTo}" : "setup / Verify";
+			var where = StepFrom.HasValue ? $"step {StepFrom} -> {StepTo}" : "setup, Verify, backup or saving";
 			return $"Save migration {SaveVersion} -> {GameVersion} failed at {where}: {Error?.Message}";
 		}
 	}

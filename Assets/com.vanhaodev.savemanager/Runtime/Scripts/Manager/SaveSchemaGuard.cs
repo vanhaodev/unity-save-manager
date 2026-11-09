@@ -70,19 +70,24 @@ namespace vanhaodev.savemanager
 			}
 		}
 
-		/// <summary>Allow saving although it is blocked. Does nothing when saving is not blocked.</summary>
+		/// <summary>
+		/// Allow saving although it is blocked (your call: keys this game writes may lose data
+		/// a newer version added, or mix layouts). The save is backed up first; if that fails,
+		/// saving stays blocked and this throws. Does nothing when saving is not blocked.
+		/// </summary>
 		public static void AllowWrite()
 		{
 			if (!_writeBlocked)
 				return;
 
-			_writeBlocked = false;
-			Debug.LogWarning("[SaveManager] Saving allowed by the game although the save was blocked.");
-
 			lock (SaveFileStore.IoLock)
 			{
+				SaveBackupStore.Create(_backupsToKeep);
 				SaveManifestStore.MoveToCurrentKeyIfNeeded();
 			}
+
+			_writeBlocked = false;
+			Debug.LogWarning("[SaveManager] Saving allowed by the game although the save was blocked (backup made).");
 		}
 
 		private static void ResetSchema()

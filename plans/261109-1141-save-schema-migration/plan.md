@@ -22,7 +22,7 @@ Nguồn: `plans/reports/research-261109-1116-save-migrator-design-report.md`. Ch
 |---|-----------|-----------|
 | 1 | [Đánh số version cho save + chặn ghi + hook save mới hơn](phase-01-schema-version-stamp-and-newer-save-guard.md) | ✅ code |
 | 2 | [Chuỗi bước migrate + chạy đồng bộ / await + hook](phase-02-migration-chain-runner-and-hooks.md) | ✅ code |
-| 3 | [Backup trước migrate + khôi phục backup](phase-03-backup-before-migration-and-restore.md) | ⬜ |
+| 3 | [Backup trước migrate + khôi phục backup](phase-03-backup-before-migration-and-restore.md) | ✅ code |
 | 4 | [Giả lập migrate trong Editor (lấy save thật, không đụng save thật), test, README, version 1.2.0](phase-04-fixture-tests-docs-and-release.md) | ⬜ |
 
 Thứ tự bắt buộc: 1 → 2 → 3 → 4.
