@@ -468,6 +468,78 @@ public interface ISaveable
 }
 ```
 
+### ISaveSetup / SaveConfig
+
+`ISaveSetup.Configure(SaveConfig c)` — all save settings in one class, applied with `Save.Setup(...)` and reused by the Editor simulator.
+
+| `SaveConfig` member | Description |
+|--------|-------------|
+| `SetKey(secret, previousSecrets...)` | Same as `SaveEncryption.SetKey` |
+| `SchemaVersion` | Same as `Save.SchemaVersion`; unset keeps the current value |
+| `BackupsToKeep` | Same as `Save.BackupsToKeep`; unset keeps the current value |
+| `AddMigrations<T>()` | Register a migration set (`T : ISaveMigrationSet, new()`), created only when a save needs migrating |
+| `Verify(ctx => ...)` | Check after the last step, before saving; throw to reject (several calls add up) |
+
+### ISaveMigrationSet / SaveMigrations
+
+`ISaveMigrationSet.Register(SaveMigrations m)` — a group of steps (e.g. one class per big game version).
+
+| `SaveMigrations` member | Description |
+|--------|-------------|
+| `Add(from, step)` | Step `from -> from + 1` |
+| `Add(from, to, step)` | Step jumping `from -> to` (e.g. to replace many old steps) |
+
+### SaveMigrationContext
+
+The save as seen by a step; changes stay in memory until the whole migration is saved.
+
+| Member | Description |
+|--------|-------------|
+| `Get<T>(key)` | Read with a data class (old or current); `default` if missing |
+| `Read(key, r => ...)` | Read field by field; throws if missing |
+| `Set(key, data, encryption?)` | Write with a data class (keeps the key's encryption, AES for new keys) |
+| `Write(key, w => ..., encryption?)` | Write field by field |
+| `Rename(from, to)` | Move a key (throws if `from` is missing or `to` exists) |
+| `Delete(key)` / `Exists(key)` / `Keys` | Remove, check, list keys |
+| `SaveVersion` / `GameVersion` | Version of the save before migrating / of the game |
+| `FromVersion` / `ToVersion` | Step running now (`GameVersion` during `Verify`) |
+
+### SaveMigrationResult
+
+| Value | Description |
+|-------|-------------|
+| `UpToDate` | Save already at the game's version (or new); nothing done |
+| `Migrated` | Migrated and saved |
+| `NewerSave` | Made by a newer game version; saving blocked |
+| `TooOld` | No step starts at the save's version; saving blocked |
+| `Failed` | A step / Verify / backup / saving failed; save unchanged, saving blocked |
+
+### SaveMigrationThread
+
+| Value | Description |
+|-------|-------------|
+| `MainThread` | One step per frame on the main thread; steps may use Unity APIs (default) |
+| `Background` | Worker thread; steps must not use Unity APIs (WebGL uses `MainThread`) |
+
+### Event data
+
+| Type | Members |
+|------|---------|
+| `SaveVersionEvent` (`NewerSaveDetected`, `SaveTooOld`, `SaveTouchedByOlderVersion`) | `SaveVersion`, `GameVersion`, `OldestSupportedVersion` (SaveTooOld only), `AllowWrite()` |
+| `SaveMigrationFailure` (`MigrationFailed`) | `SaveVersion`, `GameVersion`, `StepFrom` / `StepTo` (null if setup / Verify / backup / saving failed), `Error`, `AllowWrite()` |
+| `SaveBackupInfo` (`ListBackups`) | `Path`, `SchemaVersion`, `CreatedAt` |
+
+### SaveMigrationSimulator / SaveMigrationSimulation
+
+| Member | Description |
+|--------|-------------|
+| `SaveMigrationSimulator.Run(setup, folder)` | Simulate migrating the save in `folder` (holding `manifest.dat`), in memory, nothing written |
+| `SaveMigrationSimulator.CaptureCurrentSave(folder)` | Copy the loaded save into `folder` (outside SaveData), replacing it; `null` if not loaded / nothing saved |
+| `sim.Result` / `sim.Error` / `sim.SaveVersion` / `sim.GameVersion` | Outcome |
+| `sim.Steps` | Each step: `From`, `To`, `Owner`, `Milliseconds`, `Error` |
+| `sim.Changes` | Each key: `Key`, `Kind` (Added / Removed / Changed), `SizeBefore`, `SizeAfter` |
+| `sim.VerifyPassed` / `sim.ExportTo(folder)` / `sim.ToString()` | Verify passed; write the migrated save to an empty folder; readable report |
+
 ---
 
 ## Add Sample to Project
