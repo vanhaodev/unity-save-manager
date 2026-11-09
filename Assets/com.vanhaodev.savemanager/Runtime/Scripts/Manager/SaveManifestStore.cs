@@ -56,6 +56,9 @@ namespace vanhaodev.savemanager
 
 		internal static bool Contains(string key) => _current != null && _current.TryGet(key, out _);
 
+		/// <summary>Keys of the save in use (a copy).</summary>
+		internal static List<string> KeysSnapshot() => new(_current.Entries.Keys);
+
 		/// <summary>
 		/// Load the newest manifest whose files all pass the fingerprint check.
 		/// Falls back to the backup manifest (previous complete save) if the main one
@@ -132,8 +135,9 @@ namespace vanhaodev.savemanager
 			_touchedByOlderBuild = false;
 			_markerSchema = null;
 
-			// New player (or everything moved to quarantine): the save starts at the game's version.
-			if (ReferenceEquals(_current, SaveManifest.Empty))
+			// No data (new player, everything in quarantine, or an empty old save): nothing to
+			// migrate, the save starts at the game's version.
+			if (ReferenceEquals(_current, SaveManifest.Empty) || _current.Entries.Count == 0)
 			{
 				_schema = gameSchema;
 				return;
@@ -240,11 +244,9 @@ namespace vanhaodev.savemanager
 			DeleteUnreferenced(dropped);
 
 			// Once per session at most (and when a migration changes the schema).
-			if (_markerSchema != job.SchemaVersion)
-			{
-				SaveSchemaMarker.TryWrite(job.SchemaVersion);
+			// Retried on the next commit if writing failed.
+			if (_markerSchema != job.SchemaVersion && SaveSchemaMarker.TryWrite(job.SchemaVersion))
 				_markerSchema = job.SchemaVersion;
-			}
 		}
 
 		/// <summary>Give up a job: remove its new files, the previous save stays current.</summary>

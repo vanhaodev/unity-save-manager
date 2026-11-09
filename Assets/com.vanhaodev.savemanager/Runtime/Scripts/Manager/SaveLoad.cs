@@ -125,13 +125,7 @@ namespace vanhaodev.savemanager
 
         private static T Deserialize<T>(byte[] bytes, EncryptionType encryption) where T : ISaveable, new()
         {
-            // Decrypt data part (after header)
-            var dataBytes = new byte[bytes.Length - SaveHeader.HEADER_SIZE];
-            Array.Copy(bytes, SaveHeader.HEADER_SIZE, dataBytes, 0, dataBytes.Length);
-            dataBytes = SaveEncryption.Decrypt(dataBytes, encryption);
-
-            // Read data
-            var dataReader = new SaveReader(dataBytes);
+            var dataReader = new SaveReader(ReadPlainData(bytes, encryption));
             var data = new T();
             data.ReadSave(dataReader);
             return data;

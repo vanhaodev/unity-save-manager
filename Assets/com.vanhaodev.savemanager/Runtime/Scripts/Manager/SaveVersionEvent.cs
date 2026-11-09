@@ -9,10 +9,14 @@ namespace vanhaodev.savemanager
 		/// <summary>Save.SchemaVersion of the running game.</summary>
 		public int GameVersion { get; }
 
-		internal SaveVersionEvent(int saveVersion, int gameVersion)
+		/// <summary>SaveTooOld only: oldest save version the registered migrations can still bring up to date.</summary>
+		public int? OldestSupportedVersion { get; }
+
+		internal SaveVersionEvent(int saveVersion, int gameVersion, int? oldestSupportedVersion = null)
 		{
 			SaveVersion = saveVersion;
 			GameVersion = gameVersion;
+			OldestSupportedVersion = oldestSupportedVersion;
 		}
 
 		/// <summary>

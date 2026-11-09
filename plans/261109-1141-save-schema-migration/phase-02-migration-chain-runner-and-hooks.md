@@ -94,12 +94,12 @@ Save.Setup(new GameSaveSetup());   // game gọi 1 lần lúc khởi động
 6. `MigrateAsync` 2 chế độ + progress; WebGL fallback.
 
 ## Todo
-- [ ] Đăng ký bước theo nhóm class, báo lỗi chuỗi sai ngay
-- [ ] Context đọc/ghi/đổi tên/xoá key
-- [ ] Chạy lần lượt, lưu 1 lần
-- [ ] Đóng băng / await nền / await rải frame
-- [ ] Hook started / step / completed / failed / too old
-- [ ] Compile sạch
+- [x] Đăng ký bước theo nhóm class, báo lỗi chuỗi sai ngay (Editor: lúc Setup)
+- [x] Context đọc/ghi/đổi tên/xoá key
+- [x] Chạy lần lượt, lưu 1 lần
+- [x] Đóng băng / await nền / await rải frame
+- [x] Hook started / step / completed / failed / too old
+- [x] Compile sạch + harness console 39/39 kiểm tra pass (gồm các lỗi review đã sửa)
 
 ## Success criteria
 - Save đã mới nhất: `Migrate()` / `MigrateAsync()` không đọc file, không tạo object migrate, Task hoàn thành ngay (đo bằng test: 0 lần gọi `Register`).
@@ -113,3 +113,8 @@ Save.Setup(new GameSaveSetup());   // game gọi 1 lần lúc khởi động
 
 ## Đã chốt
 - Mặc định `MigrateAsync` = `MainThread` (user đồng ý 2026-11-09).
+
+## Ghi chú khi làm (2026-11-09)
+- Đổi secret vẫn là 1 commit riêng lúc load (chạy trước migrate, chỉ 1 lần sau khi đổi key) — không gộp vào commit migrate cho đơn giản.
+- Chỉ đăng ký bước qua `Save.Setup(ISaveSetup)`; `Save.SchemaVersion` / `SaveEncryption.SetKey` vẫn dùng riêng được.
+- `SaveTooOld` + `AllowWrite()`: save giữ schema cũ → lần mở sau lại TooOld. Cần "bắt đầu lại" (backup rồi xoá) → thêm ở phase 3.

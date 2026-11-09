@@ -54,7 +54,7 @@ namespace vanhaodev.savemanager
 		}
 
 		/// <summary>Best effort: a missing marker only weakens old-build detection, never breaks saving.</summary>
-		internal static void TryWrite(int schemaVersion)
+		internal static bool TryWrite(int schemaVersion)
 		{
 			try
 			{
@@ -75,10 +75,12 @@ namespace vanhaodev.savemanager
 				if (File.Exists(path))
 					File.Delete(path);
 				File.Move(tmp, path);
+				return true;
 			}
 			catch (Exception e)
 			{
 				Debug.LogWarning($"[SaveManager] Could not write {Path.GetFileName(SaveFileStore.SchemaMarkerPath)}: {e.Message}");
+				return false;
 			}
 		}
 

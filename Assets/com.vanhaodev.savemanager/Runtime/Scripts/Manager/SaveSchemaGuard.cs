@@ -13,6 +13,12 @@ namespace vanhaodev.savemanager
 	{
 		private static int _schemaVersion;
 		private static volatile bool _writeBlocked;
+		private static string _writeBlockReason;
+
+		// True once the save is loaded AND its version checked (block / migration decided).
+		// Save calls wait on this, not on "loaded", so none slips in between.
+		private static volatile bool _schemaChecked;
+		private static readonly object LoadLock = new();
 
 		/// <summary>
 		/// Version of the game's save data. Raise it by 1 whenever saved data changes shape.
@@ -48,15 +54,18 @@ namespace vanhaodev.savemanager
 		/// </summary>
 		public static event Action<SaveVersionEvent> SaveTouchedByOlderVersion;
 
-		/// <summary>True while saving is blocked (see NewerSaveDetected). Loading still works.</summary>
+		/// <summary>
+		/// True while saving is blocked: save made by a newer game (NewerSaveDetected), too old
+		/// to migrate (SaveTooOld) or migration failed (MigrationFailed). Loading still works.
+		/// </summary>
 		public static bool IsWriteBlocked => _writeBlocked;
 
-		/// <summary>Schema version of the save on disk (loads the save if needed).</summary>
+		/// <summary>Schema version of the save on disk (loads the save if needed, does not migrate).</summary>
 		public static int SaveSchemaVersion
 		{
 			get
 			{
-				EnsureLoaded();
+				LoadIfNeeded();
 				return SaveManifestStore.SchemaVersion;
 			}
 		}
@@ -80,6 +89,8 @@ namespace vanhaodev.savemanager
 		{
 			_schemaVersion = 0;
 			_writeBlocked = false;
+			_writeBlockReason = null;
+			_schemaChecked = false;
 			NewerSaveDetected = null;
 			SaveTouchedByOlderVersion = null;
 		}
@@ -89,29 +100,45 @@ namespace vanhaodev.savemanager
 		private static void CheckSchema()
 		{
 			var saveVersion = SaveManifestStore.SchemaVersion;
+			var touched = SaveManifestStore.TouchedByOlderBuild;
+			var newer = saveVersion > _schemaVersion;
 
-			if (SaveManifestStore.TouchedByOlderBuild)
+			// All state first: a hook handler below may already call Save, and must see the
+			// write block / pending migration.
+			if (newer)
+			{
+				_migrationResult = SaveMigrationResult.NewerSave;
+				BlockWrites($"the save was made by a newer game version (save schema {saveVersion} > game {_schemaVersion})");
+			}
+			else
+			{
+				lock (SaveFileStore.IoLock)
+				{
+					SaveManifestStore.MoveToCurrentKeyIfNeeded();
+				}
+
+				// Run by Migrate / MigrateAsync, or by the first Save call if the game did not.
+				_needsMigration = saveVersion < _schemaVersion;
+			}
+
+			_schemaChecked = true;
+
+			if (touched)
 			{
 				Debug.LogWarning($"[SaveManager] An older game build saved over this save (save schema {saveVersion}).");
 				InvokeEach(SaveTouchedByOlderVersion, h => h(new SaveVersionEvent(saveVersion, _schemaVersion)));
 			}
 
-			if (saveVersion > _schemaVersion)
-			{
-				_writeBlocked = true;
-				Debug.LogWarning($"[SaveManager] Save was made by a newer game version (save schema {saveVersion} > game {_schemaVersion}). Saving is blocked.");
-
-				// Inline so a handler's AllowWrite() takes effect before the caller's first write.
+			// Inline so a handler's AllowWrite() takes effect before the caller's first write.
+			if (newer)
 				InvokeEach(NewerSaveDetected, h => h(new SaveVersionEvent(saveVersion, _schemaVersion)));
-			}
+		}
 
-			if (_writeBlocked)
-				return;
-
-			lock (SaveFileStore.IoLock)
-			{
-				SaveManifestStore.MoveToCurrentKeyIfNeeded();
-			}
+		private static void BlockWrites(string reason)
+		{
+			_writeBlocked = true;
+			_writeBlockReason = reason;
+			Debug.LogWarning($"[SaveManager] Saving is blocked: {reason}.");
 		}
 
 		private static void ThrowIfWriteBlocked()
@@ -122,9 +149,7 @@ namespace vanhaodev.savemanager
 
 		private static InvalidOperationException WriteBlockedError()
 		{
-			return new InvalidOperationException(
-				$"Saving is blocked: the save was made by a newer game version (save schema {SaveManifestStore.SchemaVersion} > game {_schemaVersion}). " +
-				"Call Save.AllowWrite() to save anyway.");
+			return new InvalidOperationException($"Saving is blocked: {_writeBlockReason}. Call Save.AllowWrite() to save anyway.");
 		}
 
 		// SetAsync never throws for this: the Task fails and SaveFailed is raised, like a disk error.

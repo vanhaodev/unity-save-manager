@@ -51,6 +51,7 @@ namespace vanhaodev.savemanager
             SaveEncryption.ResetKey();
             ResetEvents();
             ResetSchema();
+            ResetMigration();
         }
 
         /// <summary>
@@ -185,24 +186,40 @@ namespace vanhaodev.savemanager
             SaveQueue.CommitNow(new Dictionary<string, PendingWrite> { [key] = write });
         }
 
-        // First call loads the manifest on the calling (main) thread, so integrity
-        // problems are reported there and the worker never has to load.
+        // Every public Save call: load once, then make sure the save is migrated (one bool
+        // check when it already is).
         private static void EnsureLoaded()
         {
-            if (SaveManifestStore.IsLoaded)
+            LoadIfNeeded();
+            EnsureMigrated();
+        }
+
+        // First call loads the manifest on the calling (main) thread, so integrity
+        // problems are reported there and the worker never has to load.
+        // Done when the version check finished too, so no call can write in between. A hook
+        // raised by the check that calls Save again (same thread) passes straight through.
+        private static void LoadIfNeeded()
+        {
+            if (_schemaChecked)
                 return;
 
-            CaptureMainThread();
-            var problems = new List<string>();
-            lock (SaveFileStore.IoLock)
+            lock (LoadLock)
             {
-                SaveManifestStore.EnsureLoaded(problems, _schemaVersion);
+                if (_schemaChecked)
+                    return;
+
+                CaptureMainThread();
+                var problems = new List<string>();
+                lock (SaveFileStore.IoLock)
+                {
+                    SaveManifestStore.EnsureLoaded(problems, _schemaVersion);
+                }
+
+                foreach (var problem in problems)
+                    Report(problem);
+
+                CheckSchema();
             }
-
-            foreach (var problem in problems)
-                Report(problem);
-
-            CheckSchema();
         }
 
         private static void Report(string message)
@@ -212,7 +229,7 @@ namespace vanhaodev.savemanager
         }
 
         // Key becomes part of a file name.
-        private static void ValidateKey(string key)
+        internal static void ValidateKey(string key)
         {
             if (string.IsNullOrEmpty(key))
                 throw new ArgumentException("Save key must not be empty.", nameof(key));
@@ -220,20 +237,28 @@ namespace vanhaodev.savemanager
                 throw new ArgumentException($"Save key '{key}' contains characters not allowed in file names.", nameof(key));
         }
 
-        // Header (not encrypted) + data (encrypted)
         private static byte[] Serialize(ISaveable data, EncryptionType encryption)
         {
-            var headerWriter = new SaveWriter();
-            SaveHeader.Write(headerWriter, encryption);
-
             var dataWriter = new SaveWriter();
             data.WriteSave(dataWriter);
-            var dataBytes = SaveEncryption.Encrypt(dataWriter.ToArray(), encryption);
+            return BuildFile(dataWriter.ToArray(), encryption);
+        }
 
+        /// <summary>File bytes: header (not encrypted) + data (encrypted).</summary>
+        internal static byte[] BuildFile(byte[] plainData, EncryptionType encryption)
+        {
             var finalWriter = new SaveWriter();
-            finalWriter.AddBytes(headerWriter.ToArray());
-            finalWriter.AddBytes(dataBytes);
+            SaveHeader.Write(finalWriter, encryption);
+            finalWriter.AddBytes(SaveEncryption.Encrypt(plainData, encryption));
             return finalWriter.ToArray();
+        }
+
+        /// <summary>Plain data of a file (header removed, decrypted with the current key).</summary>
+        internal static byte[] ReadPlainData(byte[] fileBytes, EncryptionType encryption)
+        {
+            var dataBytes = new byte[fileBytes.Length - SaveHeader.HEADER_SIZE];
+            Array.Copy(fileBytes, SaveHeader.HEADER_SIZE, dataBytes, 0, dataBytes.Length);
+            return SaveEncryption.Decrypt(dataBytes, encryption);
         }
 
     }
