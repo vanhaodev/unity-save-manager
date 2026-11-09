@@ -1,7 +1,7 @@
 # Phase 1 — Đánh số version cho save + chặn ghi + hook save mới hơn
 
 ## Overview
-Ưu tiên: cao · Trạng thái: chưa làm · Nền cho phase 2–3.
+Ưu tiên: cao · Trạng thái: xong code, chưa test trong Unity · Nền cho phase 2–3.
 
 ## Key insights
 - `SaveManifest` (VERSION=1) đã ký toàn bộ body → thêm field schema vào body là được ký luôn.
@@ -39,11 +39,11 @@
 6. Gộp: `SaveKeyMigration` (đổi secret) không chạy khi chặn ghi.
 
 ## Todo
-- [ ] Manifest lưu schema, đọc được save 1.1.0
-- [ ] `Save.SchemaVersion`
-- [ ] Hook `NewerSaveDetected` + `AllowWrite()`
-- [ ] Chặn ghi + `IsWriteBlocked`
-- [ ] Compile sạch
+- [x] Manifest lưu schema (cuối file, giữ VERSION 1) + schema.dat, đọc được save 1.1.0
+- [x] `Save.SchemaVersion` + `Save.SaveSchemaVersion`
+- [x] Hook `NewerSaveDetected` + `SaveTouchedByOlderVersion` + `AllowWrite()`
+- [x] Chặn ghi + `IsWriteBlocked` (backup trước AllowWrite: phase 3)
+- [x] Compile sạch (dotnet build trên Runtime)
 
 ## Success criteria
 - Save 1.1.0 load bình thường, lần ghi sau thành manifest v2 schema 0.

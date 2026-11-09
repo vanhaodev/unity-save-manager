@@ -23,6 +23,7 @@ namespace vanhaodev.savemanager
 		internal static readonly string Folder = Path.Combine(Application.persistentDataPath, "SaveData");
 
 		internal static string ManifestPath => Path.Combine(Folder, ManifestFileName);
+		internal static string SchemaMarkerPath => Path.Combine(Folder, "schema.dat");
 		internal static string TmpPath(string path) => path + ".tmp";
 		internal static string BakPath(string path) => path + ".bak";
 

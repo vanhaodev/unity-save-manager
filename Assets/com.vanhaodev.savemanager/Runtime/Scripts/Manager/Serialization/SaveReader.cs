@@ -15,6 +15,9 @@ namespace vanhaodev.savemanager
 			_offset = 0;
 		}
 
+		/// <summary>Bytes left to read.</summary>
+		internal int Remaining => _data.Length - _offset;
+
 		public byte ReadByte()
 		{
 			return _data[_offset++];

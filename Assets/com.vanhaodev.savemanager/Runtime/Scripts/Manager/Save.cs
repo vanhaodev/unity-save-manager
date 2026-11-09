@@ -50,6 +50,7 @@ namespace vanhaodev.savemanager
             SaveTransaction.Reset();
             SaveEncryption.ResetKey();
             ResetEvents();
+            ResetSchema();
         }
 
         /// <summary>
@@ -61,6 +62,7 @@ namespace vanhaodev.savemanager
         {
             ValidateKey(key);
             EnsureLoaded();
+            ThrowIfWriteBlocked();
             WriteNow(key, Serialize(data, encryption));
         }
 
@@ -85,6 +87,9 @@ namespace vanhaodev.savemanager
         {
             ValidateKey(key);
             EnsureLoaded();
+            if (IsWriteBlocked)
+                return BlockedWriteTask(key);
+
             var bytes = Serialize(data, encryption);
 
             if (forceSync)
@@ -166,6 +171,7 @@ namespace vanhaodev.savemanager
         {
             ValidateKey(key);
             EnsureLoaded();
+            ThrowIfWriteBlocked();
             WriteNow(key, null);
         }
 
@@ -190,11 +196,13 @@ namespace vanhaodev.savemanager
             var problems = new List<string>();
             lock (SaveFileStore.IoLock)
             {
-                SaveManifestStore.EnsureLoaded(problems);
+                SaveManifestStore.EnsureLoaded(problems, _schemaVersion);
             }
 
             foreach (var problem in problems)
                 Report(problem);
+
+            CheckSchema();
         }
 
         private static void Report(string message)

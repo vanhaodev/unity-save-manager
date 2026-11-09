@@ -24,13 +24,33 @@ namespace vanhaodev.savemanager
 		// must then delete it instead of moving it over the good manifest.dat.bak.
 		private static bool _mainFileIsGood;
 
+		// Schema version of the save in use, and whether an older build rewrote it last.
+		private static int _schema;
+		private static bool _touchedByOlderBuild;
+
+		// Schema stored in schema.dat, null while unknown (not read on the normal load path).
+		private static int? _markerSchema;
+
+		// Key set that signed the loaded manifest, while it still has to move to the current key.
+		private static SaveEncryption.KeySet _pendingKeyMove;
+
 		internal static bool IsLoaded => _loaded;
+
+		/// <summary>Schema version of the save in use (Save.SchemaVersion it was written with).</summary>
+		internal static int SchemaVersion => _schema;
+
+		/// <summary>An older build (library 1.1.0 or older) saved over this save since this library last did.</summary>
+		internal static bool TouchedByOlderBuild => _touchedByOlderBuild;
 
 		internal static void Reset()
 		{
 			_current = null;
 			_backup = null;
 			_mainFileIsGood = false;
+			_schema = 0;
+			_touchedByOlderBuild = false;
+			_markerSchema = null;
+			_pendingKeyMove = null;
 			_loaded = false;
 		}
 
@@ -41,8 +61,11 @@ namespace vanhaodev.savemanager
 		/// Falls back to the backup manifest (previous complete save) if the main one
 		/// or any of its files is broken / swapped / edited. Problems are appended to
 		/// <paramref name="problems"/> so the caller can report them outside the lock.
+		/// A brand-new save takes <paramref name="gameSchema"/> as its schema version.
+		/// Moving to the current SetKey secret is left to <see cref="MoveToCurrentKeyIfNeeded"/>,
+		/// so the caller can hold it back when writing is not allowed.
 		/// </summary>
-		internal static void EnsureLoaded(List<string> problems)
+		internal static void EnsureLoaded(List<string> problems, int gameSchema)
 		{
 			if (_loaded)
 				return;
@@ -97,12 +120,47 @@ namespace vanhaodev.savemanager
 			// Unverifiable files that could not be moved aside must not be deleted either.
 			if (canCleanUp)
 				DeleteOrphans();
-			_loaded = true;
 
-			// Loaded with a previous SetKey secret: move it to the current one right away,
-			// so later versions no longer need the old secret.
-			if (loadedWith != null && loadedWith != SaveEncryption.CurrentKeys)
-				MigrateToCurrentKey(loadedWith);
+			ResolveSchema(gameSchema);
+			_pendingKeyMove = loadedWith != null && loadedWith != SaveEncryption.CurrentKeys ? loadedWith : null;
+			_loaded = true;
+		}
+
+		// Normal path: the number at the end of the manifest, nothing else is read.
+		private static void ResolveSchema(int gameSchema)
+		{
+			_touchedByOlderBuild = false;
+			_markerSchema = null;
+
+			// New player (or everything moved to quarantine): the save starts at the game's version.
+			if (ReferenceEquals(_current, SaveManifest.Empty))
+			{
+				_schema = gameSchema;
+				return;
+			}
+
+			if (_current.SchemaVersion.HasValue)
+			{
+				_schema = _current.SchemaVersion.Value;
+				return;
+			}
+
+			// No number: a save of library 1.1.0 (schema 0), unless the marker shows this library
+			// saved it before and an older build rewrote it since — then the marker has its version.
+			_markerSchema = SaveSchemaMarker.TryRead();
+			_touchedByOlderBuild = _markerSchema.HasValue;
+			_schema = _markerSchema ?? 0;
+		}
+
+		/// <summary>
+		/// Loaded with a previous SetKey secret: move the save to the current one, so later
+		/// versions no longer need the old secret. Failure is logged and retried on the next call
+		/// (or launch).
+		/// </summary>
+		internal static void MoveToCurrentKeyIfNeeded()
+		{
+			if (_pendingKeyMove != null)
+				MigrateToCurrentKey(_pendingKeyMove);
 		}
 
 		/// <summary>
@@ -113,13 +171,18 @@ namespace vanhaodev.savemanager
 		internal sealed class CommitJob
 		{
 			internal long Generation;
+			internal int SchemaVersion;
 			internal Dictionary<string, SaveManifest.Entry> Entries;
 			internal Queue<KeyValuePair<string, byte[]>> Remaining;
 			internal readonly List<string> Written = new();
 		}
 
-		/// <summary>Start a commit. changes: key -> bytes, or key -> null to remove the key.</summary>
-		internal static CommitJob BeginCommit(IReadOnlyDictionary<string, byte[]> changes)
+		/// <summary>
+		/// Start a commit. changes: key -> bytes, or key -> null to remove the key.
+		/// The save keeps its schema version unless <paramref name="schemaVersion"/> is given
+		/// (only a migration raises it).
+		/// </summary>
+		internal static CommitJob BeginCommit(IReadOnlyDictionary<string, byte[]> changes, int? schemaVersion = null)
 		{
 			if (!_loaded)
 				throw new System.InvalidOperationException("Save manifest is not loaded.");
@@ -127,6 +190,7 @@ namespace vanhaodev.savemanager
 			return new CommitJob
 			{
 				Generation = _current.Generation + 1,
+				SchemaVersion = schemaVersion ?? _schema,
 				Entries = _current.CopyEntries(),
 				Remaining = new Queue<KeyValuePair<string, byte[]>>(changes)
 			};
@@ -159,7 +223,7 @@ namespace vanhaodev.savemanager
 			if (job.Generation != _current.Generation + 1)
 				throw new System.InvalidOperationException("Save commit is out of date.");
 
-			var next = new SaveManifest(job.Generation, job.Entries);
+			var next = new SaveManifest(job.Generation, job.Entries, job.SchemaVersion);
 
 			// A broken manifest.dat must not be rotated into manifest.dat.bak.
 			if (!_mainFileIsGood && File.Exists(SaveFileStore.ManifestPath))
@@ -171,7 +235,16 @@ namespace vanhaodev.savemanager
 			var dropped = _backup;
 			_backup = _current;
 			_current = next;
+			_schema = job.SchemaVersion;
+			_touchedByOlderBuild = false;
 			DeleteUnreferenced(dropped);
+
+			// Once per session at most (and when a migration changes the schema).
+			if (_markerSchema != job.SchemaVersion)
+			{
+				SaveSchemaMarker.TryWrite(job.SchemaVersion);
+				_markerSchema = job.SchemaVersion;
+			}
 		}
 
 		/// <summary>Give up a job: remove its new files, the previous save stays current.</summary>
@@ -185,9 +258,9 @@ namespace vanhaodev.savemanager
 		/// Write one complete save in one go. On failure nothing changes on disk
 		/// (new files are removed) and the exception propagates.
 		/// </summary>
-		internal static void Commit(IReadOnlyDictionary<string, byte[]> changes)
+		internal static void Commit(IReadOnlyDictionary<string, byte[]> changes, int? schemaVersion = null)
 		{
-			var job = BeginCommit(changes);
+			var job = BeginCommit(changes, schemaVersion);
 			try
 			{
 				while (WriteNext(job)) { }
@@ -288,6 +361,7 @@ namespace vanhaodev.savemanager
 			try
 			{
 				Commit(SaveKeyMigration.BuildChanges(_current, from));
+				_pendingKeyMove = null;
 				Debug.Log("[SaveManager] Save moved from a previous SetKey secret to the current one.");
 			}
 			catch (System.Exception e)

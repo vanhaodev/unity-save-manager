@@ -28,15 +28,23 @@ namespace vanhaodev.savemanager
 		private const byte VERSION = 1;
 		private const int HASH_SIZE = 32;
 
-		internal static readonly SaveManifest Empty = new(0, new Dictionary<string, Entry>());
+		internal static readonly SaveManifest Empty = new(0, new Dictionary<string, Entry>(), null);
 
 		internal long Generation { get; }
+
+		/// <summary>
+		/// Game data version (Save.SchemaVersion) of this save, or null when the manifest has
+		/// none: written by library 1.1.0 or older, or last rewritten by such an old build.
+		/// </summary>
+		internal int? SchemaVersion { get; }
+
 		private readonly Dictionary<string, Entry> _entries;
 
-		internal SaveManifest(long generation, Dictionary<string, Entry> entries)
+		internal SaveManifest(long generation, Dictionary<string, Entry> entries, int? schemaVersion)
 		{
 			Generation = generation;
 			_entries = entries;
+			SchemaVersion = schemaVersion;
 		}
 
 		internal IReadOnlyDictionary<string, Entry> Entries => _entries;
@@ -70,6 +78,11 @@ namespace vanhaodev.savemanager
 				w.AddLong(kv.Value.Generation);
 				w.AddBytes(kv.Value.Hash);
 			}
+
+			// Appended after the entries, format kept at VERSION 1: older libraries stop reading
+			// after the entries, so they still load this save instead of quarantining it.
+			if (SchemaVersion.HasValue)
+				w.AddInt(SchemaVersion.Value);
 
 			var body = w.ToArray();
 			var hash = SaveEncryption.Sign(body);
@@ -128,7 +141,10 @@ namespace vanhaodev.savemanager
 					entries[key] = new Entry(entryGeneration, hash);
 				}
 
-				return new SaveManifest(generation, entries);
+				// Trailing schema number; absent in saves of library 1.1.0 and older.
+				int? schemaVersion = r.Remaining >= 4 ? r.ReadInt() : null;
+
+				return new SaveManifest(generation, entries, schemaVersion);
 			}
 			catch (Exception e) when (!(e is InvalidDataException))
 			{
