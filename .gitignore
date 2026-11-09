@@ -101,3 +101,7 @@ InitTestScene*.unity*
 # IDE files (generated / personal)
 *.slnx
 .vscode/
+
+# Package samples imported via Package Manager (source: Packages/com.vanhaodev.savemanager/Samples~)
+/[Aa]ssets/[Ss]amples/
+/[Aa]ssets/[Ss]amples.meta

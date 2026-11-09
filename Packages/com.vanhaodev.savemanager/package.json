@@ -1,0 +1,32 @@
+{
+  "name": "com.vanhaodev.savemanager",
+  "version": "1.2.0",
+  "displayName": "Save Manager",
+  "description": "Fast binary save system: crash-safe and consistent across files, AES-encrypted and signed by default, background saving with await, transactions, save hooks, save migration with backups and WebGL support. Handles complex nested classes without JSON serialization issues.",
+  "unity": "6000.0",
+  "author": {
+    "name": "vanhaodev"
+  },
+  "dependencies": {
+    "com.vanhaodev.encryptionmanager": "1.1.0"
+  },
+  "documentationUrl": "https://github.com/vanhaodev/unity-save-manager/blob/main/README.md",
+  "keywords": [
+    "vanhaodev",
+    "save",
+    "storage",
+    "persistence",
+    "data",
+    "encryption",
+    "crash-safe",
+    "transaction",
+    "migration"
+  ],
+  "samples": [
+    {
+      "displayName": "Inventory",
+      "description": "A simple inventory system demo.",
+      "path": "Samples~/Inventory"
+    }
+  ]
+}

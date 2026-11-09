@@ -1,7 +1,7 @@
 # Phase 4 — Giả lập migrate (Editor), test, README, version 1.2.0
 
 ## Overview
-Ưu tiên: trung bình · Trạng thái: chưa làm · Phụ thuộc 1–3.
+Ưu tiên: trung bình · Trạng thái: xong · Phụ thuộc 1–3.
 
 ## Giả lập migrate (Tools > Save Manager > Simulate Migration)
 Yêu cầu user (2026-11-09): menu tự lấy save của game dùng lib để test hàm migrate đúng không.
@@ -31,15 +31,15 @@ Yêu cầu user (2026-11-09): menu tự lấy save của game dùng lib để te
 ## Test & phát hành
 - Tạo `Tests/Editor` (Unity Test Framework, EditMode): đọc save 1.1.0; chuỗi đủ/thiếu/trùng; bước throw; Verify fail; save mới hơn + `AllowWrite`; TooOld; backup + xoay vòng + khôi phục; async 2 chế độ; giả lập không đổi save thật.
 - README: mục Migration — `ISaveSetup`, ví dụ bước, quy tắc tăng version, hook, backup/khôi phục, giả lập, giới hạn.
-- Đồng bộ `Exported/`, sample, `package.json` 1.2.0.
+- Chuyển lib về `Packages/com.vanhaodev.savemanager/` (1 nguồn, giống addressables-encryption), sample vào `Samples~`, bỏ `Exported/`; `package.json` 1.2.0; encryptionmanager 1.1.0.
 
 ## Todo
-- [ ] Cửa sổ giả lập: chọn nguồn, chạy, xem từng bước + thay đổi key + Verify
-- [ ] Xuất kết quả giả lập
-- [ ] Test EditMode
-- [ ] README + sample
-- [ ] Đồng bộ Exported, version 1.2.0
-- [ ] Code review
+- [x] Cửa sổ giả lập: chọn nguồn, chạy, xem từng bước + thay đổi key + Verify
+- [x] Xuất kết quả giả lập
+- [x] Test EditMode (31 test, chạy trong Unity thật)
+- [x] README (sample giữ nguyên)
+- [x] Cấu trúc Packages/, bỏ Exported, version 1.2.0
+- [x] Code review (2 lượt, lỗi đã sửa)
 
 ## Success criteria
 - Giả lập trên save cũ: thấy đủ bước, lỗi chỉ đúng bước; thư mục SaveData thật giữ nguyên (so hash trước/sau).
